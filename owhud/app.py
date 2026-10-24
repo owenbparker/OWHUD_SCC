@@ -121,6 +121,20 @@ class HudApp:
         self.changed()
         return info
 
+    def swap_sides(self):
+        """The teams change sides: their names, colours, logos and records, the
+        maps they've won, Team A in the map bans and their stats."""
+        cfg = self.config.get()
+        flip = {"left": "right", "right": "left"}
+        mb = cfg.get("map_bans") or {}
+        cur = self.stats(cfg)
+        self.config.update({"left": dict(cfg["right"]), "right": dict(cfg["left"]),
+                            "map_bans": {"team_a": flip.get(mb.get("team_a"), "right"),
+                                         "results": [flip.get(r, r) for r in mb.get("results") or []]},
+                            "stats": {"left": cur["right"], "right": cur["left"]}})
+        log(f"Sides swapped: {cfg['right']['name'] or 'right team'} on the left")
+        self.changed()
+
     def swap_stats(self):
         cur = self.stats()
         self.config.update({"stats": {"left": cur["right"], "right": cur["left"]}})
@@ -434,6 +448,8 @@ def make_handler(app):
                     if side not in ("left", "right", "draw"):
                         raise ValueError("side must be left, right or draw")
                     app.map_result(side, 1 if int(body.get("delta") or 1) > 0 else -1)
+                elif path == "/api/swap":
+                    app.swap_sides()
                 elif path == "/api/series/reset":
                     app.config.update({"map_bans": {"steps": [], "results": []}})
                     log("New series: map bans and scores cleared")

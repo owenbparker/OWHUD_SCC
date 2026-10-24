@@ -32,7 +32,8 @@ the map bans.
   (first to 2, 3 or 4) and *New series*. The overlay's design and options
   (team logos, records, SCC 1's coloured slashes, SCC 3's accent colour, up /
   down).
-- **Teams**: names, short names, records, colours and logos; the tournament
+- **Teams**: names, short names, records, colours and logos (*Swap sides*
+  switches the teams over, with their maps won, Team A and stats); the tournament
   logo (middle of SCC 3, top of the map bans) and the line under it.
 - **Map Pool**: the maps on the graphic, a column per mode; *Current
   competitive pool* (OWCS 2026 Stage 3: Busan, Ilios, Oasis · Eichenwalde,

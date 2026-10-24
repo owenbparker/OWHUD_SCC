@@ -234,8 +234,16 @@ class Server(unittest.TestCase):
         state = self.post("/api/stats", {"swap": True})
         self.assertEqual(state["stats"]["left"][0]["name"], "Hound One")
         state = self.post("/api/stats", {"swap": True})
+        # Swap sides: the teams, their maps won, Team A and their stats.
+        self.post("/api/config", {"left": {"name": "Saints", "color": "#00ff00"}, "right": {"name": "Hounds", "color": "#00ccff"},
+                                  "map_bans": {"steps": [{"map": "Busan"}], "results": ["left"]}})
+        state = self.post("/api/swap", {})
+        c = state["config"]
+        self.assertEqual((c["left"]["name"], c["left"]["color"], c["right"]["name"]), ("Hounds", "#00ccff", "Saints"))
+        self.assertEqual((c["map_bans"]["results"], c["map_bans"]["team_a"]), (["right"], "right"))
+        self.assertEqual((state["overlay"]["right"]["score"], state["stats"]["right"][0]["name"]), (1, "Saint1"))
         state = self.post("/api/stats", {"clear": True})
-        self.assertEqual((state["stats"]["left"][0]["name"], state["stats"]["left"][0]["kills"]), ("Saint1", 0))
+        self.assertEqual((state["stats"]["right"][0]["name"], state["stats"]["right"][0]["kills"]), ("Saint1", 0))
 
 
 if __name__ == "__main__":

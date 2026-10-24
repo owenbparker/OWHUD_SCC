@@ -32,6 +32,9 @@
   main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; padding: 16px; align-content: start; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
   section.wide { grid-column: 1 / -1; }
+  .h2row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .h2row h2 { margin: 0; }
+  .h2row button { flex: 0 0 auto; padding: 6px 14px; }
   h2 { margin: 0 0 12px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
   label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; }
@@ -189,7 +192,7 @@
   </section>
 
   <section class="wide" data-page="teams">
-    <h2>Teams</h2>
+    <div class="h2row"><h2>Teams</h2><button id="swap-sides" title="The teams change sides: names, logos, colours, records, maps won and stats">⇄ Swap sides</button></div>
     <div class="teams2" id="teams"></div>
     <p class="note">The record is the team's season record beside its name (e.g. 3-1). Drop a logo on its box, or click to choose.
       GFX Engine's Use Global Information brings the teams' names, colours and logos.</p>
@@ -491,6 +494,7 @@ function applyStats(s) {
   const missing = Object.values(s.heroes.pictures).filter(x => !x).length;
   $("stats-note").textContent = missing ? `${missing} heroes have no picture yet (they download when the HUD is online).` : "";
 }
+$("swap-sides").onclick = () => post("/api/swap");
 $("stats-swap").onclick = () => post("/api/stats", { swap: true });
 async function readShot(file) {
   if (!file || !file.type.startsWith("image/")) return;
