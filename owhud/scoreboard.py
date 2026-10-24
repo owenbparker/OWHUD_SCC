@@ -97,12 +97,14 @@ def _candidates(words, any_line=False):
     for line in _lines(words):
         for part in _split_rows(line, tall):
             toks = _tokens(part)
+            while toks and number(toks[0][0]) is not None:
+                toks = toks[1:]       # (a number before the name: Overwatch's ultimate charge)
             first = next((i for i, t in enumerate(toks) if number(t[0]) is not None), None)
             name = [t for t in (toks if first is None and any_line else toks[:first or 0]) if not t[0].endswith("%")]
             if name:
                 h = max(t[4] for t in toks)
                 out.append({"name": " ".join(t[0] for t in name), "y": line["y"], "h": h, "x": name[0][1],
-                            "name_end": name[-1][1] + name[-1][3]})
+                            "name_end": name[-1][1] + name[-1][3], "numbers": first is not None})
     return out
 
 
@@ -236,8 +238,9 @@ debug = []     # (what the last screenshot's numbers were read as)
 def image_rows(image, words):
     """The players' rows, read from the picture: [{"name", "y", "x", "nums"}]."""
     rows, used = [], []
-    for c in _candidates(words, any_line=True):
-        if any(abs(c["y"] - y) < c["h"] * 0.6 and abs(c["x"] - x) < 200 for y, x in used):
+    # (lines with numbers first: a line under one, like a player's title, is part of its row)
+    for c in sorted(_candidates(words, any_line=True), key=lambda c: not c["numbers"]):
+        if any(abs(c["y"] - y) < c["h"] * 1.2 and abs(c["x"] - x) < 200 for y, x in used):
             continue
         used.append((c["y"], c["x"]))
         top, bottom = int(c["y"] - c["h"] * 0.9), int(c["y"] + c["h"] * 0.9)
@@ -340,6 +343,8 @@ def rows_of(words):
             if len(labels) >= 4:
                 out.append({"header": labels, "y": line["y"], "x": toks[0][1]})
                 continue
+            while toks and number(toks[0][0]) is not None:
+                toks = toks[1:]       # (a number before the name: the ultimate charge)
             nums = [(number(t[0]), t[1] + t[3] / 2) for t in toks if number(t[0]) is not None]
             first = next((i for i, t in enumerate(toks) if number(t[0]) is not None), len(toks))
             name = " ".join(t[0] for t in toks[:first] if not t[0].endswith("%")).strip()   # (not an ult charge)
@@ -353,6 +358,25 @@ def _columns(rows, header):
     with the most numbers (E A D DMG H, then MIT)."""
     if header and len(header) == len(COLS):
         return header
+    # The columns the rows' numbers line up in (there can be others: icons
+    # read as numbers, MIT); DMG is the one with the biggest numbers that has
+    # three columns to its left (E A D) and one to its right (H).
+    pts = sorted((x, v) for r in rows for v, x in r["nums"] if v is not None)
+    clusters = []
+    for x, v in pts:
+        if clusters and x - clusters[-1][-1][0] < 20:
+            clusters[-1].append((x, v))
+        else:
+            clusters.append([(x, v)])
+    keep = [c for c in clusters if len(c) >= max(2, len(rows) // 2)]
+    xs = [statistics.median(x for x, v in c) for c in keep]
+    if len(keep) >= len(COLS):
+        options = range(3, len(keep) - 1)
+        if header and "damage" in header:
+            d = min(options, key=lambda i: abs(xs[i] - header["damage"]))
+        else:
+            d = max(options, key=lambda i: statistics.median(v for x, v in keep[i]))
+        return dict(zip(COLS, xs[d - 3:d + 2]))
     counts = [len(r["nums"]) for r in rows]
     most = max(set(counts), key=lambda c: (counts.count(c), c))
     full = [r for r in rows if len(r["nums"]) == most]
@@ -481,27 +505,39 @@ SAMPLE = [[("SAINT ONE", 22, 5, 6, 11234, 300, 4021), ("Saint2", 10, 0, 4, 5000,
 
 
 def sample(fonts):
-    """A made-up scoreboard like Overwatch's (white on dark rows, a table per
-    team): the build reads it to check the text recognition works."""
+    """A made-up scoreboard laid out like Overwatch's Tab screen (fonts: the
+    HUD's fonts folder): the build reads it to check the text recognition
+    works. Each row: portrait, ultimate charge, name (and a title under some),
+    role icon, E A D DMG H MIT, report button."""
+    import os
     from PIL import Image, ImageDraw, ImageFont
-    img = Image.new("RGB", (1920, 1080), (24, 30, 40))
+    img = Image.new("RGB", (1920, 1080), (40, 22, 18))
     d = ImageDraw.Draw(img)
-    big = ImageFont.truetype(fonts, 30)
-    small = ImageFont.truetype(fonts, 22)
-    cols = (820, 900, 980, 1090, 1210, 1330)
+    name_font = ImageFont.truetype(os.path.join(fonts, "SairaCondensed-Bold.ttf"), 28)
+    stat = ImageFont.truetype(os.path.join(fonts, "Inter.ttf"), 17)
+    title = ImageFont.truetype(os.path.join(fonts, "Inter.ttf"), 15)
+    cols = (940, 991, 1041, 1122, 1213, 1305)
+    d.rectangle((530, 157, 1390, 188), fill=(225, 225, 228))
+    for label, x in zip(("E", "A", "D", "DMG", "H", "MIT"), cols):
+        d.text((x, 172), label, font=stat, fill=(40, 40, 50), anchor="mm")
     for t, team in enumerate(SAMPLE):
-        top = 120 + t * 440
-        for label, x in zip(("E", "A", "D", "DMG", "H", "MIT"), cols):
-            d.text((x, top), label, font=small, fill=(200, 200, 200), anchor="mm")
         for i, (name, *nums) in enumerate(team):
-            y = top + 50 + i * 70
-            d.rectangle((240, y - 28, 1380, y + 28), fill=(40, 90, 160) if t == 0 else (150, 40, 50))
-            if (t, i) == (0, 1):    # (your own row: lighter)
-                d.rectangle((240, y - 28, 1380, y + 28), fill=(70, 120, 190))
-            d.rectangle((248, y - 24, 296, y + 24), fill=(230, 190, 120))     # (the hero's portrait)
-            d.text((340, y), name, font=big, fill=(255, 255, 255), anchor="lm")
+            y = (221 if t == 0 else 627) + i * 66
+            colour = (30, 120, 190) if t == 0 else (160, 30, 50)
+            d.rectangle((530, y - 32, 1390, y + 32), fill=colour)
+            d.rectangle((916, y - 32, 1066, y + 32), fill=tuple(c * 85 // 100 for c in colour))
+            d.rectangle((1354, y - 32, 1390, y + 32), fill=tuple(c * 70 // 100 for c in colour))
+            d.rectangle((558, y - 32, 620, y + 32), fill=(200, 160, 120))           # (the hero's portrait)
+            d.ellipse((631, y - 16, 663, y + 16), outline=(255, 255, 255), width=2)
+            d.text((647, y), "0", font=stat, fill=(255, 255, 255), anchor="mm")     # (ultimate charge)
+            d.text((676, y - (8 if i % 2 else 0)), name, font=name_font, fill=(255, 255, 255), anchor="lm")
+            if i % 2:
+                d.text((677, y + 21), "Title", font=title, fill=(230, 230, 230), anchor="lm")
+            d.ellipse((860, y - 24, 908, y + 24), fill=(255, 255, 255))           # (the role icon)
+            d.polygon([(872, y + 10), (884, y - 12), (896, y + 10)], fill=(20, 20, 30))
+            d.polygon([(1362, y + 10), (1372, y - 10), (1382, y + 10)], fill=(200, 200, 210))   # (report)
             for v, x in zip(nums, cols):
-                d.text((x, y), f"{v:,}", font=big, fill=(255, 255, 255), anchor="mm")
+                d.text((x, y), f"{v:,}", font=stat, fill=(255, 255, 255), anchor="mm")
     return img
 
 

@@ -66,7 +66,7 @@ def smoke_test(port):
         try:
             from . import scoreboard
             from .config import WEB_DIR
-            img = scoreboard.sample(os.path.join(WEB_DIR, "fonts", "SairaCondensed-Bold.ttf"))
+            img = scoreboard.sample(os.path.join(WEB_DIR, "fonts"))
             teams = scoreboard.read(img)["teams"]
             debug = list(scoreboard.debug)
             words = scoreboard.ocr_words(img)

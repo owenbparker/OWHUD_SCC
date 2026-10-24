@@ -144,6 +144,18 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(([p["name"] for p in teams[0]][:2], [p["name"] for p in teams[1]]), (["Saint1", "Saint2"], ["Hound One", "Hound2"]))
         self.assertEqual(teams[1][0]["deaths"], 9)
 
+    def test_overwatch_layout_icons_and_ult_charge(self):
+        # (like the real Tab screen: the ultimate charge before the name, a
+        # role icon read as a number, and MIT and the report button after H)
+        words = []
+        for i, (name, *nums) in enumerate(self.TEAMS[0] + self.TEAMS[1][:2]):
+            y = 220 + i * 66
+            words += [("0", 640, y, 12, 20), (name, 676, y, 120, 26), ("8", 880, y, 20, 20), ("A", 1370, y, 18, 18)]
+            words += [(str(v), x - 10, y, 20, 20) for v, x in zip(nums, (940, 991, 1041, 1122, 1213, 1305))]
+        teams = scoreboard.parse(words, 1920)["teams"]
+        self.assertEqual(teams[0][0], {"name": "Saint1", "kills": 22, "assists": 5, "deaths": 6, "damage": 11234, "healing": 300})
+        self.assertEqual((teams[1][0]["name"], teams[1][0]["deaths"]), ("Hound One", 9))
+
     def test_merge_matches_names_and_sides(self):
         blank = {"name": "", "hero": "", **dict.fromkeys(scoreboard.COLS, 0)}
         cur = {"left": [dict(blank, name="Hound2", hero="Ana")] + [dict(blank)] * 4,
