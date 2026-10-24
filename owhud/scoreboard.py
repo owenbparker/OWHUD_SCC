@@ -189,15 +189,13 @@ def compose(strip, spans, tall):
 
 def read_numbers(words, where):
     """The numbers read in a composed line, one per place (None: not read)."""
-    out = [None] * len(where)
-    for t, x, y, w, h in words:
+    texts = [""] * len(where)
+    for t, x, y, w, h in sorted(words, key=lambda w: w[1]):
         t = t.replace(LABEL, "") if t != LABEL else ""
         for i, (a, b) in enumerate(where):
             if x < b and x + w > a:      # (overlaps the number: the label's letters are dropped)
-                v = number(re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", t))
-                if v is not None and out[i] is None:
-                    out[i] = v
-    return out
+                texts[i] += re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", t)
+    return [number(t) for t in texts]   # ("11" ",234": one number)
 
 
 def image_rows(image, words):
