@@ -13,7 +13,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
-from . import heroes, maps
+from . import heroes, maps, scoreboard
 from .config import DATA_DIR, LOGO_DIR, PLAYER, STAT_KEYS, STYLES, web_file
 from .enginelink import EngineLink, save_logo_bytes
 from .log import log, since
@@ -96,6 +96,34 @@ class HudApp:
         new = {side: [dict(PLAYER, name="" if names_too else p["name"]) for p in cur[side]] for side in SIDES}
         self.config.update({"stats": new})
         log("Stats cleared")
+        self.changed()
+
+    def read_screenshot(self, data_url, reader=None):
+        """A scoreboard screenshot (a data: URL) read into the stats. Returns
+        what was read: {"players", "missing", "swapped"}."""
+        m = re.fullmatch(r"data:image/[\w+.-]+;base64,(.+)", data_url or "", re.S)
+        if not m:
+            raise ValueError("drop a screenshot (PNG or JPG)")
+        data = base64.b64decode(m.group(1))
+        try:
+            found = (reader or scoreboard.read_bytes)(data)
+        except ImportError:
+            raise ValueError("reading a screenshot needs Windows' text recognition (type the stats in instead)")
+        except RuntimeError as e:
+            raise ValueError(str(e))
+        teams = found["teams"]
+        if not any(teams):
+            raise ValueError("no scoreboard found in that picture (the players' rows: name, E A D DMG H)")
+        stats, info = scoreboard.merge(self.stats(), teams)
+        self.config.update({"stats": stats})
+        log(f"Read {info['players']} players' stats from a screenshot"
+            + (f" ({len(info['missing'])} numbers couldn't be read)" if info["missing"] else ""))
+        self.changed()
+        return info
+
+    def swap_stats(self):
+        cur = self.stats()
+        self.config.update({"stats": {"left": cur["right"], "right": cur["left"]}})
         self.changed()
 
     def hero_icon_base(self):
@@ -410,8 +438,13 @@ def make_handler(app):
                     app.config.update({"map_bans": {"steps": [], "results": []}})
                     log("New series: map bans and scores cleared")
                     app.changed()
+                elif path == "/api/stats/screenshot":
+                    info = app.read_screenshot(body.get("data"))
+                    return self._json(dict(app.snapshot(), read=info))
                 elif path == "/api/stats":
-                    if body.get("clear"):
+                    if body.get("swap"):
+                        app.swap_stats()
+                    elif body.get("clear"):
                         app.clear_stats(bool(body.get("names")))
                     else:
                         app.set_stats(side, body.get("players"))

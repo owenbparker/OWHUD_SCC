@@ -51,9 +51,13 @@ the map bans.
     ban, A picks), Hybrid (B, A, B picks), Push (B ban, A picks), Flashpoint
     (B picks), Escort (A, B, A picks); tiebreakers Control then Push.
   - A drawn map adds a map to the series.
-- **Stats**: the post-game stats, typed in from the end-of-map scoreboard:
-  each team's 5 players, their hero (every hero, by role) and E / A / D / DMG
-  / H. *Clear the stats* for the next map. They go to the GFX Engine's Team
+- **Stats**: the post-game stats: each team's 5 players, their hero (every
+  hero, by role) and E / A / D / DMG / H. Drop a screenshot of the scoreboard
+  on the page (or paste it with Ctrl+V, or click to choose one) and the names
+  and numbers are read from it with Windows' text recognition: a player goes
+  to the row with their name, the teams to the sides whose names match, and
+  anything that couldn't be read is listed to type in. *Swap the teams* if
+  they landed the wrong way round; *Clear the stats* for the next map. They go to the GFX Engine's Team
   stats (DMG, Kills, Deaths) and Player stats (the same + Healing).
 
 Long names and lines shrink to fit their boxes on every design and on the map
@@ -84,3 +88,4 @@ tournament logo, and the players' names for the stats.
     python -m owhud.gui          # the desktop app
     python -m owhud              # the HUD alone
     python -m unittest discover -s tests
+    python -m owhud.scoreboard shot.png   # what a screenshot reads as (Windows)

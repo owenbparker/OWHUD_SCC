@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import urllib.request
 
-from owhud import heroes, maps
+from owhud import heroes, maps, scoreboard
 from owhud.app import HudApp, start
 from owhud.config import Config
 
@@ -104,6 +104,61 @@ class Heroes(unittest.TestCase):
         self.assertEqual(heroes.slug("Soldier: 76"), "soldier-76")
 
 
+def board(teams, x0=300, y0=200, header=True, gap=330, dx=0):
+    """The words text recognition finds on a scoreboard: a table per team, one
+    under the other ((text, x, y, w, h) like WindowsOcr.words)."""
+    cols = [x + dx for x in (700, 780, 860, 960, 1080, 1200)]
+    words, y = [], y0
+    for team in teams:
+        if header:
+            words += [(t, x - 8, y, 16, 18) for t, x in zip(("E", "A", "D", "DMG", "H", "MIT"), cols)]
+        for i, (name, *nums) in enumerate(team):
+            ry = y + 40 + i * 50
+            words += [(part, x0 + 70 * j, ry, 60, 22) for j, part in enumerate(name.split())]
+            words += [(str(v), x - 10 * len(str(v)) / 2, ry, 10 * len(str(v)), 22) for v, x in zip(nums, cols) if v is not None]
+        y += gap
+    return words
+
+
+class Scoreboard(unittest.TestCase):
+    TEAMS = [[("Saint1", 22, 5, 6, "11,234", 300, 4000), ("Saint2", 10, 0, 4, "5,000", "9,800", 0),
+              ("Saint3", 1, 2, 3, 400, 0, 0), ("Saint4", 0, 0, 0, 0, 0, 0), ("Saint5", 3, 3, 3, 3, 3, 3)],
+             [("Hound One", 7, 8, 9, "12,000", 0, 100), ("Hound2", 1, 1, 1, 1, 1, 1)]]
+
+    def test_rows_and_columns(self):
+        teams = scoreboard.parse(board(self.TEAMS), 1920)["teams"]
+        self.assertEqual([len(t) for t in teams], [5, 2])
+        self.assertEqual(teams[0][0], {"name": "Saint1", "kills": 22, "assists": 5, "deaths": 6, "damage": 11234, "healing": 300})
+        self.assertEqual((teams[0][1]["healing"], teams[1][0]["name"], teams[1][0]["damage"]), (9800, "Hound One", 12000))
+
+    def test_without_header_a_missing_number_is_none(self):
+        t = [list(self.TEAMS[0]), self.TEAMS[1]]
+        t[0][2] = ("Saint3", 1, None, 3, 400, 0, 0)
+        teams = scoreboard.parse(board(t, header=False), 1920)["teams"]
+        self.assertEqual(teams[0][2], {"name": "Saint3", "kills": 1, "assists": None, "deaths": 3, "damage": 400, "healing": 0})
+        self.assertEqual(teams[1][0]["damage"], 12000)
+
+    def test_tables_side_by_side(self):
+        one, two = board([self.TEAMS[0]], x0=40, dx=-350), board([self.TEAMS[1]], x0=40, dx=-350)
+        teams = scoreboard.parse(one + [(w[0], w[1] + 960, w[2], w[3], w[4]) for w in two], 1920)["teams"]
+        self.assertEqual(([p["name"] for p in teams[0]][:2], [p["name"] for p in teams[1]]), (["Saint1", "Saint2"], ["Hound One", "Hound2"]))
+        self.assertEqual(teams[1][0]["deaths"], 9)
+
+    def test_merge_matches_names_and_sides(self):
+        blank = {"name": "", "hero": "", **dict.fromkeys(scoreboard.COLS, 0)}
+        cur = {"left": [dict(blank, name="Hound2", hero="Ana")] + [dict(blank)] * 4,
+               "right": [dict(blank, name="saint2"), dict(blank, name="Saint1", hero="Mercy")] + [dict(blank)] * 3}
+        teams = scoreboard.parse(board(self.TEAMS), 1920)["teams"]
+        teams[0][3]["kills"] = None
+        stats, info = scoreboard.merge(cur, teams)
+        self.assertTrue(info["swapped"])
+        self.assertEqual([p["name"] for p in stats["right"]], ["saint2", "Saint1", "Saint3", "Saint4", "Saint5"])
+        self.assertEqual((stats["right"][1]["hero"], stats["right"][1]["damage"]), ("Mercy", 11234))
+        self.assertEqual((stats["left"][0]["name"], stats["left"][0]["hero"], stats["left"][0]["kills"]), ("Hound2", "Ana", 1))
+        self.assertEqual(stats["left"][1]["name"], "Hound One")
+        self.assertEqual(info["missing"], ["Saint4 kills"])
+
+
 class Server(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -166,6 +221,19 @@ class Server(unittest.TestCase):
                          ("Saint1", "Soldier: 76", 11234, 300))
         self.assertTrue(f["left_p1_hero_icon"].endswith("/heroes/soldier-76"))
         self.assertEqual(f["left_p2_hero_icon"], "")       # no picture of Lúcio yet
+        # A screenshot (read by a stand-in for Windows' text recognition).
+        read, scoreboard.read_bytes = scoreboard.read_bytes, lambda data: scoreboard.parse(board(Scoreboard.TEAMS), 1920)
+        try:
+            state = self.post("/api/stats/screenshot", {"data": "data:image/png;base64,iVBORw0KGgo="})
+        finally:
+            scoreboard.read_bytes = read
+        self.assertEqual(state["read"]["players"], 7)
+        self.assertEqual((state["stats"]["left"][0]["name"], state["stats"]["left"][0]["hero"], state["stats"]["left"][0]["damage"]),
+                         ("Saint1", "Soldier: 76", 11234))
+        self.assertEqual(state["stats"]["right"][0]["name"], "Hound One")
+        state = self.post("/api/stats", {"swap": True})
+        self.assertEqual(state["stats"]["left"][0]["name"], "Hound One")
+        state = self.post("/api/stats", {"swap": True})
         state = self.post("/api/stats", {"clear": True})
         self.assertEqual((state["stats"]["left"][0]["name"], state["stats"]["left"][0]["kills"]), ("Saint1", 0))
 

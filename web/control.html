@@ -119,6 +119,13 @@
   .stats-grid input[type=number] { text-align: right; }
   .stats-grid .pic { width: 34px; height: 34px; border-radius: 6px; background: #000 center / cover no-repeat; border: 1px solid var(--line); }
   .stats-total { color: var(--muted); font-size: 12px; text-align: right; }
+  .shot-drop { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 18px; border: 1.5px dashed var(--line);
+    border-radius: 10px; color: var(--muted); cursor: pointer; }
+  .shot-drop:hover, .shot-drop.over { border-color: var(--accent); color: inherit; }
+  .shot-drop b { color: var(--text); font-weight: 600; }
+  .shot-drop img { height: 54px; border-radius: 4px; display: none; }
+  .shot-drop img[src^="blob:"] { display: block; }
+  .shot-drop .msg { flex: 1; }
   body.shell button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
   body.shell button.primary[disabled] { background: #3a3326; border-color: var(--line); color: var(--muted); }
   /* (Match: the controls first, the preview under them) */
@@ -155,9 +162,13 @@
   </section>
   <section class="wide" data-page="stats">
     <h2>Post-game stats</h2>
+    <div class="shot-drop" id="shot-drop"><img id="shot-img" alt="">
+      <div class="msg"><b>Drop a scoreboard screenshot here</b>, paste one (Ctrl+V) or click to choose one: the players'
+        names and E / A / D / DMG / H are read from it. Check them, and pick the heroes.<br><span id="shot-msg"></span></div></div>
     <div id="stats"></div>
     <div class="row" style="margin-top:14px;flex-wrap:wrap">
       <button id="stats-clear" style="flex:0 0 auto">Clear the stats (new map)</button>
+      <button id="stats-swap" style="flex:0 0 auto">Swap the teams</button>
       <span class="note" id="stats-note" style="margin:0"></span>
     </div>
     <p class="note">Type them in from the end-of-map scoreboard (E = eliminations, A = assists, D = deaths, DMG = damage,
@@ -480,6 +491,26 @@ function applyStats(s) {
   const missing = Object.values(s.heroes.pictures).filter(x => !x).length;
   $("stats-note").textContent = missing ? `${missing} heroes have no picture yet (they download when the HUD is online).` : "";
 }
+$("stats-swap").onclick = () => post("/api/stats", { swap: true });
+async function readShot(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const img = $("shot-img");
+  if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+  img.src = URL.createObjectURL(file);
+  $("shot-msg").textContent = "Reading…";
+  const r = await post("/api/stats/screenshot", { data: await readFile(file) });
+  if (!r) { $("shot-msg").textContent = ""; return; }
+  const n = r.read.missing.length;
+  $("shot-msg").textContent = `Read ${r.read.players} players.` + (n ? ` Couldn't read ${n} number${n > 1 ? "s" : ""} (${r.read.missing.join(", ")}): type ${n > 1 ? "them" : "it"} in.` : "")
+    + (r.read.swapped ? " (Their team names matched the other way round, so the teams were swapped.)" : "");
+}
+dropBox($("shot-drop"), readShot);
+$("shot-drop").onclick = () => pickFile(readShot);
+document.addEventListener("paste", e => {
+  if (!$("shot-drop").offsetParent) return;   // (only on the Stats page)
+  const item = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith("image/"));
+  if (item) { e.preventDefault(); readShot(item.getAsFile()); }
+});
 $("stats-clear").onclick = () => { if (confirm("Clear the stats and heroes for a new map? (The players stay.)")) post("/api/stats", { clear: true }); };
 
 // --- the map pool ---------------------------------------------------------------

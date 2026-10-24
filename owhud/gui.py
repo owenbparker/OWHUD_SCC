@@ -61,6 +61,21 @@ def smoke_test(port):
     except Exception as e:
         ok = False
         results.append(f"FAIL window library: {e!r}")
+    if sys.platform == "win32":
+        # Reading screenshots: a made-up scoreboard through Windows' text recognition.
+        try:
+            from . import scoreboard
+            from .config import WEB_DIR
+            teams = scoreboard.read(scoreboard.sample(os.path.join(WEB_DIR, "fonts", "SairaCondensed-Bold.ttf")))["teams"]
+            want = [[dict(zip(("name",) + scoreboard.COLS, p[:6])) for p in team] for team in scoreboard.SAMPLE]
+            got = sum(1 for a, b in zip(sum(teams, []), sum(want, [])) for k in b if str(a.get(k)).lower() == str(b[k]).lower())
+            results.append(f"{'OK  ' if teams == want else 'WARN'} screenshot reading ({got}/{6 * 10} read right)")
+            for team in teams:
+                for p in team:
+                    results.append(f"       {p}")
+        except Exception as e:
+            ok = False
+            results.append(f"FAIL screenshot reading: {e!r}")
     with open(os.path.join(DATA_DIR, "smoke-test.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(results + ["PASSED" if ok else "FAILED"]) + "\n")
     return ok
