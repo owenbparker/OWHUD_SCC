@@ -2,9 +2,11 @@
 
 The Stats page takes a screenshot (dropped, pasted or picked): its text is
 read with Windows' built-in text recognition (Windows.Media.Ocr, nothing
-extra to install), and each player's row (name, then E A D DMG H MIT) is
-found by its numbers. Two tables (or a table either side of the screen) are
-the two teams.
+extra to install). That finds the players' rows by their names, but it skips
+short numbers standing on their own ("0", "5"), so each row's numbers are
+then cut out of the picture one by one and read again in a made-up line of
+words ("max 5 max 0 max 11,234 ..."), where they're read well. Two tables
+(or a table either side of the screen) are the two teams.
 
 Windows only; elsewhere the stats are typed in.
 
@@ -80,9 +82,149 @@ def ocr_words(image):
     best = []
     for variant in (big, ImageOps.invert(ImageOps.autocontrast(big))):
         words = [(t, x / scale, y / scale, w / scale, h / scale) for t, x, y, w, h in _ocr.words(variant)]
-        if len(rows_of(words)) > len(rows_of(best)):
+        if len(_candidates(words)) > len(_candidates(best)):
             best = words
     return best
+
+
+def _candidates(words, any_line=False):
+    """The lines that could be a player's: a name, then at least one number
+    (any_line: or no number read at all, since lone digits are often missed)."""
+    out = []
+    if not words:
+        return out
+    tall = statistics.median(w[4] for w in words) or 1
+    for line in _lines(words):
+        for part in _split_rows(line, tall):
+            toks = _tokens(part)
+            first = next((i for i, t in enumerate(toks) if number(t[0]) is not None), None)
+            name = [t for t in (toks if first is None and any_line else toks[:first or 0]) if not t[0].endswith("%")]
+            if name:
+                h = max(t[4] for t in toks)
+                out.append({"name": " ".join(t[0] for t in name), "y": line["y"], "h": h, "x": name[0][1],
+                            "name_end": name[-1][1] + name[-1][3]})
+    return out
+
+
+# --- each row's numbers, cut out and read again ------------------------------
+
+LABEL = "max"     # (letters the recognition doesn't take for digits)
+
+
+def _ink(strip):
+    """The strip's text as a mask (255 = text): whatever differs a lot from
+    the strip's background, lighter or darker."""
+    bg = _background(strip)
+    return strip.convert("L").point(lambda v: 255 if abs(v - bg) > 70 else 0)
+
+
+def _background(strip):
+    """The strip's commonest brightness (its median)."""
+    hist = strip.convert("L").histogram()
+    half, acc = sum(hist) / 2, 0
+    for v, n in enumerate(hist):
+        acc += n
+        if acc >= half:
+            return v
+    return 0
+
+
+def blobs(strip, tall):
+    """The strip's separate words (numbers): [(x0, x1)], left to right. Ink
+    columns closer than ~half a letter's height belong together."""
+    mask = _ink(strip)
+    w, h = mask.size
+    px = mask.load()
+    cols = [sum(1 for y in range(h) if px[x, y]) for x in range(w)]
+    out, start, gap = [], None, 0
+    join = max(3, tall * 0.45)
+    for x, c in enumerate(cols + [0] * int(join + 2)):
+        if c:
+            if start is None:
+                start = x
+            gap, end = 0, x
+        elif start is not None:
+            gap += 1
+            if gap > join:
+                ink = sum(cols[start:end + 1])
+                # (text, not a block of another colour: not too wide, not solid)
+                if ink >= 6 and 2 <= end - start <= tall * 8 and ink < 0.7 * h * (end + 1 - start):
+                    out.append((start, end + 1))
+                start = None
+    return out
+
+
+def compose(strip, spans, tall):
+    """A line of black-on-white words: LABEL, the first number, LABEL, the
+    second... Returns the image and each number's x range in it."""
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+    from .config import WEB_DIR
+    import os
+    H = 48
+    font = ImageFont.truetype(os.path.join(WEB_DIR, "fonts", "Inter.ttf"), int(H * 0.72))
+    mask, bg = _ink(strip), _background(strip)
+    contrast = strip.convert("L").point(lambda v: min(255, abs(v - bg) * 255 // 110))
+    pieces = []
+    for x0, x1 in spans:
+        box = mask.crop((x0, 0, x1, mask.height)).getbbox() or (0, 0, x1 - x0, mask.height)
+        crop = contrast.crop((x0, max(0, box[1] - 2), x1, min(mask.height, box[3] + 2)))
+        scale = H / max(1, crop.height)
+        crop = crop.resize((max(1, int(crop.width * scale)), H))
+        pieces.append(ImageOps.invert(crop))
+    lw = int(font.getlength(LABEL))
+    gap = H // 2
+    width = 40 + sum(lw + gap + p.width + gap for p in pieces) + lw + 40
+    img = Image.new("L", (width, H + 60), 255)
+    d = ImageDraw.Draw(img)
+    x, where = 40, []
+    for p in pieces:
+        d.text((x, 30 + H), LABEL, font=font, fill=0, anchor="ls")
+        x += lw + gap
+        img.paste(p, (x, 30))
+        where.append((x, x + p.width))
+        x += p.width + gap
+    d.text((x, 30 + H), LABEL, font=font, fill=0, anchor="ls")
+    return img, where
+
+
+def read_numbers(words, where):
+    """The numbers read in a composed line, one per place (None: not read)."""
+    out = [None] * len(where)
+    for t, x, y, w, h in words:
+        t = t.replace(LABEL, "") if t != LABEL else ""
+        for i, (a, b) in enumerate(where):
+            if x < b and x + w > a:      # (overlaps the number: the label's letters are dropped)
+                v = number(re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", t))
+                if v is not None and out[i] is None:
+                    out[i] = v
+    return out
+
+
+def image_rows(image, words):
+    """The players' rows, read from the picture: [{"name", "y", "x", "nums"}]."""
+    rows, used = [], []
+    for c in _candidates(words, any_line=True):
+        if any(abs(c["y"] - y) < c["h"] * 0.6 and abs(c["x"] - x) < 200 for y, x in used):
+            continue
+        used.append((c["y"], c["x"]))
+        top, bottom = int(c["y"] - c["h"] * 0.9), int(c["y"] + c["h"] * 0.9)
+        left = int(c["name_end"] + c["h"] * 0.3)
+        strip = image.crop((left, max(0, top), image.width, min(image.height, bottom)))
+        spans = blobs(strip, c["h"])
+        # (the row ends at a gap far wider than between its columns: another table)
+        for i in range(1, len(spans)):
+            if spans[i][0] - spans[i - 1][1] > c["h"] * 9:
+                spans = spans[:i]
+                break
+        if len(spans) < 4:
+            continue
+        line, where = compose(strip, spans, c["h"])
+        values = read_numbers(_ocr.words(line), where)
+        if sum(v is not None for v in values) < 4:
+            continue      # (not a player's row)
+        nums = [(v, left + (a + b) / 2) for v, (a, b) in zip(values, spans)]
+        rows.append({"name": c["name"], "y": c["y"], "x": c["x"], "nums": nums})
+    return rows
 
 
 def number(text):
@@ -182,17 +324,22 @@ def _values(row, cols):
     gap = min((b - a for a, b in zip(xs, xs[1:])), default=200)
     out = dict.fromkeys(COLS)
     for value, x in row["nums"]:
+        if value is None:
+            continue
         col, cx = min(cols.items(), key=lambda c: abs(c[1] - x))
         if abs(cx - x) < gap * 0.6 and out[col] is None:
             out[col] = value
     return out
 
 
-def parse(words, width):
+def parse(words, width, rows=None):
     """The players on a scoreboard: {"teams": [[player, ...], [player, ...]]},
     each player {"name", "kills"... (None if it couldn't be read)}. The first
-    team is the table at the top (or on the left)."""
+    team is the table at the top (or on the left). rows: the rows read from
+    the picture (else they're the lines of words with numbers)."""
     found = rows_of(words)
+    if rows is not None:
+        found = [r for r in found if "header" in r] + rows
     rows = [r for r in found if "nums" in r]
     if not rows:
         return {"teams": [[], []]}
@@ -224,7 +371,8 @@ def parse(words, width):
 
 def read(image):
     """A screenshot (a PIL image) -> parse()'s result."""
-    return parse(ocr_words(image), image.width)
+    words = ocr_words(image)
+    return parse(words, image.width, image_rows(image, words))
 
 
 def read_bytes(data):
@@ -303,6 +451,9 @@ def sample(fonts):
         for i, (name, *nums) in enumerate(team):
             y = top + 50 + i * 70
             d.rectangle((240, y - 28, 1380, y + 28), fill=(40, 90, 160) if t == 0 else (150, 40, 50))
+            if (t, i) == (0, 1):    # (your own row: lighter)
+                d.rectangle((240, y - 28, 1380, y + 28), fill=(70, 120, 190))
+            d.rectangle((248, y - 24, 296, y + 24), fill=(230, 190, 120))     # (the hero's portrait)
             d.text((340, y), name, font=big, fill=(255, 255, 255), anchor="lm")
             for v, x in zip(nums, cols):
                 d.text((x, y), f"{v:,}", font=big, fill=(255, 255, 255), anchor="mm")
