@@ -232,6 +232,9 @@ def compose(piece, repeat=None):
 def read_number(words, repeated=False):
     """The number in a composed line's words (None: not read). repeated: it
     was written TIMES times; all the copies have to agree."""
+    # (words without a digit go: the labels, and a comma read as a letter
+    # that would land in the middle of the number)
+    words = [w for w in words if w[0] == LABEL or re.search(r"\d", w[0].translate(_DIGITS))]
     text = "".join(w[0] for w in sorted(words, key=lambda w: w[1])).replace(LABEL, " ").strip()
     text = re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", text).replace(" ", "")
     if repeated:
