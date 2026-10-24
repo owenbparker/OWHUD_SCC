@@ -168,13 +168,27 @@ def pieces(strip, spans):
     return out
 
 
+TIMES = 3     # (a lone digit is written 3 times: "5" -> "555", read like any number)
+
+
+def single(piece):
+    return piece.width < piece.height * 0.75
+
+
 def compose(piece):
     """One number between two label words ("max 5 max"), so it's read as
-    part of a line rather than a lone digit."""
+    part of a line rather than a lone digit. Even so, Windows' text
+    recognition won't read a single digit, so one is written TIMES times."""
     from PIL import Image, ImageDraw, ImageFont
     from .config import WEB_DIR
     import os
     H = piece.height
+    if single(piece):
+        step = piece.width + max(2, H // 10)
+        many = Image.new("L", (step * (TIMES - 1) + piece.width, H), 255)
+        for i in range(TIMES):
+            many.paste(piece, (i * step, 0))
+        piece = many
     font = ImageFont.truetype(os.path.join(WEB_DIR, "fonts", "Inter.ttf"), int(H * 0.72))
     lw, gap = int(font.getlength(LABEL)), int(H * 0.6)
     img = Image.new("L", (40 + lw + gap + piece.width + gap + lw + 40, H + 60), 255)
@@ -185,10 +199,17 @@ def compose(piece):
     return img
 
 
-def read_number(words):
-    """The number in a composed line's words (None: not read)."""
+def read_number(words, repeated=False):
+    """The number in a composed line's words (None: not read). repeated: it
+    was written TIMES times; all the copies have to agree."""
     text = "".join(w[0] for w in sorted(words, key=lambda w: w[1])).replace(LABEL, " ").strip()
     text = re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", text).replace(" ", "")
+    if repeated:
+        digits = re.sub(r"\D", "", text.translate(_DIGITS))
+        n = len(digits) // TIMES
+        if not n or len(digits) % TIMES or digits != digits[:n] * TIMES:
+            return None
+        text = digits[:n]
     return number(text)
 
 
@@ -216,7 +237,7 @@ def image_rows(image, words):
         values = []
         for piece in pieces(strip, spans):
             words = _ocr.words(compose(piece))
-            values.append(read_number(words))
+            values.append(read_number(words, single(piece)))
             debug.append(f"{c['name']}: {' '.join(w[0] for w in words)!r} -> {values[-1]}")
         if sum(v is not None for v in values) < 4:
             continue      # (not a player's row)
