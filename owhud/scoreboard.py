@@ -262,17 +262,21 @@ def image_rows(image, words):
     named = [c for c in cands if c["name"]]
     name_x = statistics.median(c["x"] for c in named) if named else 0
     name_end = statistics.median(c["name_end"] for c in named) if named else 0
+    name_h = statistics.median(c["h"] for c in named) if named else 0
     # Names with numbers first, then names alone (top down: a player's title
     # is under their name, part of their row), then numbers whose name wasn't read.
     order = sorted(cands, key=lambda c: (c.get("numbers_only", False), not c["numbers"], c["y"]))
     for c in order:
         if any(abs(c["y"] - y) < c["h"] * 1.2 for y, x in used if abs(x - c["x"]) < 400 or c.get("numbers_only")):
+            debug.append(f"skip {c['name']!r}@{c['y']:.0f}: a row already read there")
             continue
         if c.get("numbers_only"):
             if not named or c["x"] < name_end:
+                debug.append(f"skip numbers@{c['y']:.0f}: x {c['x']:.0f} < names' end {name_end:.0f}")
                 continue
-            c = dict(c, x=name_x, name_end=name_end, name=_read_name(image, name_x - 4, c["x"] - c["h"], c["y"], c["h"]))
-        used.append((c["y"], c["x"]))
+            # (the line's height is the digits'; a row is as tall as its name)
+            h = max(c["h"], name_h)
+            c = dict(c, x=name_x, name_end=name_end, h=h, name=_read_name(image, name_x - 4, c["x"] - h, c["y"], h))
         top, bottom = int(c["y"] - c["h"] * 0.9), int(c["y"] + c["h"] * 0.9)
         left = int(c["name_end"] + c["h"] * 0.3)
         strip = image.crop((left, max(0, top), image.width, min(image.height, bottom)))
@@ -283,6 +287,7 @@ def image_rows(image, words):
                 spans = spans[:i]
                 break
         if len(spans) < 4:
+            debug.append(f"skip {c['name']!r}@{c['y']:.0f}: {len(spans)} pieces")
             continue
         values = []
         for piece in pieces(strip, spans):
@@ -299,6 +304,7 @@ def image_rows(image, words):
             values.append(value)
         if sum(v is not None for v in values) < 4:
             continue      # (not a player's row)
+        used.append((c["y"], c["x"]))
         nums = [(v, left + (a + b) / 2) for v, (a, b) in zip(values, spans)]
         rows.append({"name": c["name"], "y": c["y"], "x": c["x"], "nums": nums})
     return rows
