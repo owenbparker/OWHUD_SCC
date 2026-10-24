@@ -103,7 +103,7 @@ def _candidates(words, any_line=False):
     tall = statistics.median(w[4] for w in words) or 1
     for line in _lines(words):
         for part in _split_rows(line, tall):
-            toks = _tokens(part)
+            toks = all_toks = _tokens(part)
             while toks and _junk(toks[0]):
                 toks = toks[1:]       # (the ultimate charge, an icon: before the name)
             first = next((i for i, t in enumerate(toks) if number(t[0]) is not None), None)
@@ -112,8 +112,8 @@ def _candidates(words, any_line=False):
                 h = statistics.median(t[4] for t in name)
                 out.append({"name": " ".join(t[0] for t in name), "y": line["y"], "h": h, "x": name[0][1],
                             "name_end": name[-1][1] + name[-1][3], "numbers": first is not None})
-            elif any_line and first is not None and sum(number(t[0]) is not None for t in toks) >= 2:
-                nums = [t for t in toks if number(t[0]) is not None]
+            elif any_line and sum(number(t[0]) is not None for t in all_toks) >= 2:
+                nums = [t for t in all_toks if number(t[0]) is not None]
                 out.append({"name": "", "y": line["y"], "h": statistics.median(t[4] for t in nums),
                             "x": nums[0][1], "numbers_only": True, "numbers": True})
     return out
