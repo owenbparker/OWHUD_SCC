@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overwatch overlay</title>
+<!--
+  The in-game overlay (1920x1080, transparent): /overlay. Three designs,
+  rebuilt from the GT titles "OVERWATCH OVERLAY" (SCC 1), "OW OVERLAY"
+  (SCC 2) and "NEW OW OVERLAY" (SCC 3) at the same positions and sizes. The
+  control panel picks the design (or ?style=1|2|3 on the URL).
+  Fonts: the design's own when they're installed on the PC (Chinese Rocks,
+  Industry), else the closest free font that comes with the HUD.
+-->
+<style>
+  @font-face { font-family: "SCC1 Font"; src: local("Chinese Rocks"), local("ChineseRocksRg-Regular"), local("Chinese Rocks Rg"), url("fonts/BebasNeue.ttf") format("truetype"); }
+  @font-face { font-family: "SCC2 Font"; src: url("fonts/Anton-Regular.ttf") format("truetype"); }
+  @font-face { font-family: "SCC3 Font"; src: local("Industry Bold"), local("Industry-Bold"), local("Industry"), url("fonts/SairaCondensed-Bold.ttf") format("truetype"); font-weight: 700; }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
+  .stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; opacity: 0; transition: opacity .5s; }
+  .stage.on { opacity: 1; }
+  .stage > div { position: absolute; inset: 0; display: none; }
+  .stage[data-style="1"] .s12, .stage[data-style="2"] .s12, .stage[data-style="3"] .s3 { display: block; }
+  .abs { position: absolute; }
+  .txt { position: absolute; display: flex; align-items: center; white-space: nowrap; overflow: hidden; color: #000; line-height: 1; }
+  .logo { position: absolute; object-fit: contain; }
+  .logo[src=""], .no-logos .logo.team { visibility: hidden; }
+  .no-records .record { display: none; }
+
+  /* SCC 1 and SCC 2: a white bar each side, the team's logo at the end, the
+     name, record and maps won. */
+  .s12 .txt { font-family: "SCC1 Font", "Bebas Neue", sans-serif; text-transform: uppercase; }
+  .stage[data-style="2"] .s12 .txt { font-family: "SCC2 Font", Anton, sans-serif; }
+  .s12 .name { top: 20px; height: 39px; font-size: 31.75px; }
+  .s12 .record { top: 20px; height: 39px; font-size: 25.4px; }
+  .s12 .score { top: 22px; height: 39px; width: 40px; font-size: 32px; }
+  .stage[data-style="2"] .s12 .name { font-size: 29px; }
+  .stage[data-style="2"] .s12 .score { font-size: 29px; }
+  .slash { position: absolute; top: 20px; width: 16px; height: 41px; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; }
+  .slash.l { left: 577px; -webkit-mask-image: url("assets/overlay/slash_left.png"); mask-image: url("assets/overlay/slash_left.png"); }
+  .slash.r { left: 1326px; -webkit-mask-image: url("assets/overlay/slash_right.png"); mask-image: url("assets/overlay/slash_right.png"); }
+  .stage[data-style="2"] .slash, .no-slashes .slash { display: none; }
+
+  /* SCC 3: white name boxes with the maps won in grey, and the map and the
+     tournament logo at the top in the middle. */
+  .s3 .txt { font-family: "SCC3 Font", "Saira Condensed", sans-serif; font-weight: 700; text-transform: uppercase; }
+  .s3 .box { position: absolute; background: #fff; }
+  .s3 .dark { position: absolute; background: #404040; }
+  .s3 .name { font-size: 35.5px; height: 49px; }
+  .s3 .wins { color: #fff; justify-content: center; font-size: 34px; width: 50px; height: 49px; }
+  .s3 .mapno { left: 779px; top: 3px; width: 93px; height: 31px; justify-content: center; font-size: 30px; color: var(--accent); }
+  .s3 .firstto { left: 777px; top: 23px; width: 93px; height: 31px; justify-content: center; font-size: 18px; color: #fff; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="s12">
+    <img class="abs" src="assets/overlay/bar_left.png" style="left:0;top:19px;width:591px;height:42px" alt="">
+    <img class="abs" src="assets/overlay/bar_right.png" style="left:1329px;top:19px;width:591px;height:42px" alt="">
+    <div class="slash l" id="s12-slash-l"></div><div class="slash r" id="s12-slash-r"></div>
+    <div class="txt name" id="s12-name-l" style="left:141px;width:382px;justify-content:flex-end"></div>
+    <div class="txt record" id="s12-rec-l" style="left:141px;width:92px"></div>
+    <div class="txt score" id="s12-score-l" style="left:524px;justify-content:flex-end"></div>
+    <img class="logo team" id="s12-logo-l" src="" style="left:0;top:-12px;width:154px;height:107px" alt="">
+    <div class="txt name" id="s12-name-r" style="left:1395px;width:382px"></div>
+    <div class="txt record" id="s12-rec-r" style="left:1685px;width:92px;justify-content:flex-end"></div>
+    <div class="txt score" id="s12-score-r" style="left:1355px"></div>
+    <img class="logo team" id="s12-logo-r" src="" style="left:1766px;top:-12px;width:154px;height:107px" alt="">
+  </div>
+  <div class="s3">
+    <div class="dark" style="left:523px;top:5px;width:50px;height:49px"></div>
+    <div class="box" style="left:41px;top:4px;width:482px;height:49px"></div>
+    <div class="box" style="left:1387px;top:4px;width:482px;height:49px"></div>
+    <div class="dark" style="left:1339px;top:4px;width:50px;height:49px"></div>
+    <div class="dark" style="left:775px;top:-1px;width:374px;height:52px"></div>
+    <div class="abs" style="left:873px;top:-1px;width:163.5px;height:52px;background:var(--accent)"></div>
+    <div class="box" style="left:875px;top:-1px;width:159.5px;height:55px"></div>
+    <div class="txt mapno" id="s3-mapno"></div>
+    <div class="txt firstto" id="s3-firstto"></div>
+    <img class="logo" id="s3-tlogo" src="" style="left:883.5px;top:-1px;width:151px;height:52px" alt="">
+    <div class="txt wins" id="s3-wins-r" style="left:1339px;top:4px"></div>
+    <div class="txt wins" id="s3-wins-l" style="left:523px;top:4px"></div>
+    <img class="logo team" id="s3-logo-l" src="" style="left:48px;top:6px;width:58.5px;height:45px" alt="">
+    <div class="txt name" id="s3-name-l" style="left:112px;top:2px;width:389px"></div>
+    <img class="logo team" id="s3-logo-r" src="" style="left:1803px;top:6px;width:58.5px;height:45px" alt="">
+    <div class="txt name" id="s3-name-r" style="left:1390px;top:4px;width:400px;justify-content:flex-end"></div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const stage = $("stage");
+  const forced = new URLSearchParams(location.search).get("style");
+  for (const img of document.querySelectorAll("img.logo")) img.onerror = () => { img.style.visibility = "hidden"; };
+  for (const img of document.querySelectorAll("img.logo")) img.onload = () => { img.style.visibility = ""; };
+  const setText = (id, t) => { const el = $(id); if (el.textContent !== String(t)) el.textContent = t; };
+  const setSrc = (id, src) => { const el = $(id), want = src ? "/" + src.replace(/^\//, "") : ""; if (el.getAttribute("src") !== want) el.setAttribute("src", want); };
+  // A long name shrinks to fit its box.
+  function fit(id) {
+    const el = $(id);
+    el.style.fontSize = "";
+    const full = parseFloat(getComputedStyle(el).fontSize);
+    let size = full;
+    while (el.scrollWidth > el.clientWidth + 1 && size > full * 0.5) { size -= 1; el.style.fontSize = size + "px"; }
+  }
+  let shown = "";
+  function render(v) {
+    const key = JSON.stringify(v) + forced;
+    if (key === shown) return;
+    shown = key;
+    const style = String(forced || v.style || 1);
+    stage.dataset.style = ["1", "2", "3"].includes(style) ? style : "1";
+    stage.classList.toggle("no-logos", v.show.logos === false);
+    stage.classList.toggle("no-records", v.show.records === false);
+    stage.classList.toggle("no-slashes", v.show.slashes === false);
+    stage.style.top = (Number(v.show.y) || 0) + "px";
+    stage.style.setProperty("--accent", v.show.accent || "#ff7c01");
+    for (const [side, s] of [["left", "l"], ["right", "r"]]) {
+      const t = v[side];
+      setText(`s12-name-${s}`, t.name); setText(`s12-rec-${s}`, t.record); setText(`s12-score-${s}`, t.score);
+      setText(`s3-name-${s}`, t.name); setText(`s3-wins-${s}`, t.score);
+      setSrc(`s12-logo-${s}`, t.logo); setSrc(`s3-logo-${s}`, t.logo);
+      $(`s12-slash-${s}`).style.background = t.color || "#ba0aba";
+    }
+    setText("s3-mapno", v.over ? "FINAL" : `MAP ${v.map_no || 1}`);
+    setText("s3-firstto", `FIRST TO ${v.first_to}`);
+    setSrc("s3-tlogo", v.logo);
+    document.fonts.ready.then(() => ["s12-name-l", "s12-name-r", "s3-name-l", "s3-name-r"].forEach(fit));
+    stage.classList.add("on");
+  }
+  // Live from the HUD (server-sent events), polling if those don't work.
+  let polling = false;
+  async function poll() {
+    try { render(await (await fetch("/api/overlay", { cache: "no-store" })).json()); } catch (e) { /* the HUD is restarting */ }
+    setTimeout(poll, 500);
+  }
+  try {
+    const es = new EventSource("/api/stream?what=overlay");
+    es.onmessage = e => render(JSON.parse(e.data));
+    es.onerror = () => { if (!polling && es.readyState === EventSource.CLOSED) { polling = true; poll(); } };
+  } catch (e) { polling = true; poll(); }
+})();
+</script>
+</body>
+</html>

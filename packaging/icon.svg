@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <circle cx="128" cy="128" r="122" fill="#1c2430"/>
+  <!-- the ring, open at the top and the bottom -->
+  <path d="M100 30.5 A100 100 0 0 0 100 225.5" fill="none" stroke="#f99e1a" stroke-width="26" stroke-linecap="butt"/>
+  <path d="M156 30.5 A100 100 0 0 1 156 225.5" fill="none" stroke="#f99e1a" stroke-width="26" stroke-linecap="butt"/>
+  <!-- the two blades -->
+  <path d="M74 66 L110 66 L124 122 L124 186 Z" fill="#ffffff"/>
+  <path d="M182 66 L146 66 L132 122 L132 186 Z" fill="#ffffff"/>
+</svg>

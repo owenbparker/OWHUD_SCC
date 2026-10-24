@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="assets/app_icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overwatch HUD Control</title>
+<style>
+  @font-face { font-family: "Inter"; src: url("fonts/Inter.ttf") format("truetype"); font-weight: 100 900; }
+  @font-face { font-family: "Anton"; src: url("fonts/Anton-Regular.ttf") format("truetype"); }
+  :root { --bg: #0e1012; --panel: #171a1d; --line: #2a2f34; --text: #e8eaed; --muted: #8b939b; --accent: #f99e1a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Inter", system-ui, sans-serif; }
+  html, body { height: 100%; }
+  header { display: flex; align-items: center; gap: 14px; height: 54px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0; font-size: 16px; font-weight: 700; }
+  .version { font-size: 12px; color: var(--muted); }
+  .update.check { background: #252a2f; color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+  .update.check:hover { filter: none; border-color: var(--muted); }
+  .update { background: var(--accent); color: #000; border: 0; font-weight: 700; padding: 6px 12px; }
+  .update:hover { filter: brightness(1.1); }
+  .update[disabled] { background: #3a3326; color: var(--text); cursor: default; }
+  .update.error { background: #6b2a2a; color: #fff; }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--muted); white-space: nowrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 6px 12px; color: var(--muted); }
+  .seg button.on { background: var(--accent); color: #000; font-weight: 600; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 440px; height: calc(100% - 54px); }
+  .layout > main, .layout > aside { overflow-y: auto; }
+  aside { border-left: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  @media (max-width: 900px) { .layout { display: block; height: auto; } aside { border-left: 0; } }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; padding: 16px; align-content: start; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  section.wide { grid-column: 1 / -1; }
+  h2 { margin: 0 0 12px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  input[type=checkbox] { width: auto; }
+  input[type=color] { padding: 2px; height: 38px; }
+  input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  button { padding: 8px 12px; background: #252a2f; color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button[disabled] { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .preview { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #2a3442 radial-gradient(ellipse at 50% 70%, #4a5a70, #161c25); border-radius: 6px; overflow: hidden; }
+  .preview iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .warn { color: #ffcf66; }
+  .out { margin-bottom: 10px; }
+  .out > span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .out .row { align-items: stretch; }
+  .out code { display: flex; align-items: center; padding: 6px 8px; min-width: 0; }
+  .out button { flex: 0 0 auto; }
+  .toggle { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; margin: 6px 0 10px; cursor: pointer; }
+  .toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .log { height: 190px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+         font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+  .log .t { color: var(--muted); margin-right: 6px; }
+  .log .warn { color: #ffcf66; }
+  .log .error { color: #ff7b7b; }
+  [hidden] { display: none !important; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #31c392; box-shadow: 0 0 8px #31c392; }
+
+  /* The series: each team's maps won, big. */
+  .teams2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .teams2 { grid-template-columns: 1fr; } }
+  .team { border-top: 4px solid var(--c, var(--accent)); padding-top: 10px; min-width: 0; }
+  .team h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .score { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; }
+  .score b { font: 76px/1 "Anton", sans-serif; text-align: center; background: #fff; color: #000; border-radius: 8px; padding: 8px 0 4px; }
+  .score .btns { display: flex; flex-direction: column; gap: 8px; }
+  .score .won { padding: 14px 10px; font-weight: 700; font-size: 15px; }
+  .score .undo { font-size: 12px; padding: 6px; }
+  .maps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .maps div { flex: 0 0 auto; min-width: 128px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+  .maps div b { display: block; font-size: 13px; color: var(--text); }
+  .maps div span { color: var(--muted); }
+  .maps div.now { border-color: var(--accent); }
+  .logo-box { flex: 0 0 120px; height: 96px; display: grid; place-items: center; background: #111 linear-gradient(#1b1b1f, #0c0c0e);
+              border: 2px dashed var(--line); border-radius: 8px; padding: 8px; cursor: pointer; }
+  .logo-box.over { border-color: var(--accent); }
+  .logo-box img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+  .logo-box img:not([src]), .logo-box img[src=""] { visibility: hidden; }
+
+  /* Map bans. */
+  .mb-team-a { display: flex; gap: 24px; }
+  .mb-team-a label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; margin: 4px 0; cursor: pointer; }
+  .mb-team-a input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .mb-steps { margin-top: 10px; }
+  .mb-step { display: grid; grid-template-columns: 26px 70px minmax(0, 190px) minmax(0, 240px) minmax(0, 1fr); gap: 10px; align-items: center;
+             padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .mb-step.later { opacity: .45; }
+  .mb-step .n { color: var(--muted); }
+  .mb-step .mode { color: var(--muted); }
+  .mb-step .ban { color: #ff7b7b; }
+  .mb-step .pick { color: var(--accent); }
+  .mb-step .decider { color: #ffcf66; }
+  .mb-step select { padding: 5px 8px; }
+  .mb-step .res { display: flex; gap: 4px; }
+  .mb-step .res button { padding: 4px 8px; font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mb-step .res button.on { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .pool { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 1100px) { .pool { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .pool label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 5px 0; color: var(--text); font-size: 13px; cursor: pointer; }
+  .pool input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
+  .pool .pic { margin-left: auto; padding: 1px 6px; font-size: 11px; color: var(--muted); }
+  .pool .pic.has { color: #31c392; }
+  body.shell button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+  body.shell button.primary[disabled] { background: #3a3326; border-color: var(--line); color: var(--muted); }
+  /* (Match: the controls first, the preview under them) */
+  body[data-page=match] main > section:has(.preview) { order: 2; }
+</style>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+<header>
+  <img src="assets/app_icon.png" alt="" style="height:38px;margin-right:-4px">
+  <h1>Overwatch HUD</h1>
+  <div class="status"><span class="dot"></span><span id="status"></span></div>
+  <div class="status" style="margin-left:auto">
+    <label style="margin:0">HUD</label>
+    <select id="style" style="width:auto;padding:6px 10px"></select>
+    <button id="update" class="update" hidden></button>
+    <span class="version" id="version"></span>
+  </div>
+</header>
+<div class="layout">
+<main>
+  <section class="wide" data-page="match">
+    <h2>Series</h2>
+    <div class="teams2" id="series"></div>
+    <div class="maps" id="maps"></div>
+    <div class="row" style="margin-top:16px;flex-wrap:wrap">
+      <div style="flex:0 0 160px"><label>Series</label>
+        <select id="first-to"><option value="2">First to 2</option><option value="3">First to 3</option><option value="4">First to 4</option></select></div>
+      <div style="flex:0 0 auto;align-self:flex-end"><button id="draw">Map drawn</button></div>
+      <div style="flex:0 0 auto;align-self:flex-end"><button id="new-series">New series</button></div>
+    </div>
+    <p class="note">Won the map gives the map being played to that team (its maps won go up on the overlay and the map bans).
+      A drawn map adds a map to the series. New series clears the scores and the map bans.</p>
+  </section>
+  <section data-page="match">
+    <h2>Overlay</h2>
+    <label>Design</label><select id="style2"></select>
+    <label class="toggle" style="margin-top:12px"><input type="checkbox" id="show-logos"> Team logos</label>
+    <label class="toggle"><input type="checkbox" id="show-records"> Records</label>
+    <label class="toggle"><input type="checkbox" id="show-slashes"> Coloured slashes (SCC 1)</label>
+    <div class="row">
+      <div><label>Accent (SCC 3, map bans)</label><input type="color" id="accent"></div>
+      <div><label>Up / down <span id="y-v" style="float:right;color:var(--text)"></span></label><input type="range" id="y" min="-20" max="200" step="1"></div>
+    </div>
+  </section>
+
+  <section class="wide" data-page="teams">
+    <h2>Teams</h2>
+    <div class="teams2" id="teams"></div>
+    <p class="note">The record is the team's season record beside its name (e.g. 3-1). Drop a logo on its box, or click to choose.
+      GFX Engine's Use Global Information brings the teams' names, colours and logos.</p>
+  </section>
+  <section data-page="teams">
+    <h2>Tournament</h2>
+    <div class="row" style="align-items:center">
+      <div class="logo-box" id="tlogo-box" style="flex-basis:200px;height:120px"><img id="tlogo-img" alt=""></div>
+      <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+        <button id="tlogo-pick">Choose a logo…</button>
+        <button id="tlogo-clear">Use the St. Clair logo</button>
+      </div>
+    </div>
+    <label>Line under the logo (map bans)</label><input id="info" spellcheck="false" placeholder="e.g. NACE VARSITY · WEEK 1">
+    <p class="note">The logo is in the middle of SCC 3 and at the top of the map bans.</p>
+  </section>
+
+  <section class="wide" data-page="mapbans">
+    <h2>Map bans</h2>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:0 0 auto"><label>Rules</label><div class="seg" id="mb-rules"></div></div>
+      <div style="flex:1;min-width:240px"><label>Team A (higher seed)</label>
+        <div class="mb-team-a"><label><input type="checkbox" data-team-a="left"> <span></span></label>
+          <label><input type="checkbox" data-team-a="right"> <span></span></label></div></div>
+      <div style="flex:0 0 auto"><button id="mb-clear">Clear the map bans</button></div>
+    </div>
+    <p class="note" id="mb-order"></p>
+    <div class="mb-steps" id="mb-steps"></div>
+    <p class="note">Fill it in as the teams choose: the graphic shows it live, on air too. Picked maps go into the series
+      (and up on the overlay as the map being played); who won each map is set here or on the Match page.</p>
+  </section>
+  <section data-page="mapbans">
+    <h2>Map bans graphic</h2>
+    <div class="preview" id="mb-preview"><iframe src="/map-bans" title="Map bans preview" loading="lazy"></iframe></div>
+    <label class="toggle" style="margin-top:12px"><input type="checkbox" id="mb-bg"> SCC background loop behind it</label>
+    <div class="out"><span>Map bans (OBS / vMix browser source, 1920×1080; also in GFX Engine under Game HUD)</span>
+      <div class="row"><code id="url-bans"></code><button data-copy="url-bans">Copy</button></div></div>
+  </section>
+  <section class="wide" data-page="pool">
+    <h2>Map pool</h2>
+    <div class="pool" id="pool"></div>
+    <div class="row" style="margin-top:12px;align-items:center">
+      <button id="pool-current" style="flex:0 0 auto">Current competitive pool</button>
+      <span class="note" id="pool-note" style="margin:0"></span>
+    </div>
+    <input type="file" id="art-file" accept="image/*" hidden>
+    <p class="note">Ticked maps are on the map bans graphic, a column per mode. <b>Picture</b> gives a map its picture
+      (a map shown with a grey box has none yet; its name is shown either way).</p>
+  </section>
+</main>
+<aside>
+  <section data-page="overview match">
+    <h2>Preview</h2>
+    <div class="preview" id="preview"><iframe src="/overlay" title="Overlay preview"></iframe></div>
+  </section>
+  <section data-page="overview">
+    <h2>Outputs</h2>
+    <div class="out"><span>Overlay (OBS / vMix browser source, 1920×1080)</span>
+      <div class="row"><code id="url-overlay"></code><button data-copy="url-overlay">Copy</button></div></div>
+    <div class="out"><span>Map bans</span>
+      <div class="row"><code id="url-bans2"></code><button data-copy="url-bans2">Copy</button></div></div>
+    <div class="out" id="lan-box" hidden><span>From another PC</span>
+      <div class="row"><code id="url-lan"></code><button data-copy="url-lan">Copy</button></div></div>
+    <label class="toggle"><input type="checkbox" id="network"> Let other PCs on the network read the HUD</label>
+  </section>
+  <section data-page="overview">
+    <h2>Log</h2>
+    <div class="log" id="log"></div>
+  </section>
+</aside>
+</div>
+<script>window.SHELL = {"app": "Overwatch HUD", "logo": "assets/app_icon.png", "pages": [{"id": "match", "label": "Match", "icon": "live"}, {"id": "overview", "label": "Overview"}, {"id": "teams", "label": "Teams", "group": "Event setup"}, {"id": "pool", "label": "Map Pool", "icon": "tournament", "group": "Event setup"}, {"id": "mapbans", "label": "Map Bans", "icon": "draft", "group": "Live game"}, {"id": "engine", "label": "GFX Engine", "icon": "engine", "group": "Connections"}]};</script>
+<script src="enginelink.js"></script>
+<script src="shell.js"></script>
+<script src="update.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const showUpdate = updateButton($("update"), $("version"));
+const SIDES = ["left", "right"];
+let state = null, logAfter = 0;
+
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return null; }
+  if (data.config) apply(data);
+  return data;
+}
+const config = changes => post("/api/config", changes);
+const setIfIdle = (el, v) => { if (document.activeElement !== el && el.value !== String(v)) el.value = v; };
+const later = (el, fn, ms) => { clearTimeout(el._t); el._t = setTimeout(fn, ms || 300); };
+const teamName = side => (state.config[side].short || state.config[side].name);
+function readFile(file) { return new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); }); }
+function dropBox(box, onFile) {
+  box.ondragover = e => { e.preventDefault(); box.classList.add("over"); };
+  box.ondragleave = () => box.classList.remove("over");
+  box.ondrop = e => { e.preventDefault(); box.classList.remove("over"); if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); };
+}
+function pickFile(onFile) {
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = "image/*";
+  input.onchange = () => { if (input.files[0]) onFile(input.files[0]); };
+  input.click();
+}
+
+function build() {
+  const styles = Object.entries(state.styles).map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
+  $("style").innerHTML = $("style2").innerHTML = styles;
+  $("series").innerHTML = SIDES.map(side => `
+    <div class="team" data-side="${side}">
+      <h3></h3>
+      <div class="score"><b class="n">0</b>
+        <div class="btns"><button class="won primary">Won the map</button><button class="undo">Undo a map win</button></div></div>
+    </div>`).join("");
+  for (const box of $("series").children) {
+    const side = box.dataset.side;
+    box.querySelector(".won").onclick = () => post("/api/result", { side, delta: 1 });
+    box.querySelector(".undo").onclick = () => post("/api/result", { side, delta: -1 });
+  }
+  $("teams").innerHTML = SIDES.map(side => `
+    <div class="team" data-side="${side}">
+      <h3>${side === "left" ? "Left team" : "Right team"}</h3>
+      <div class="row" style="align-items:flex-start">
+        <div class="logo-box"><img alt=""></div>
+        <div>
+          <label style="margin-top:0">Name</label><input data-k="name" spellcheck="false">
+          <div class="row"><div><label>Short name</label><input data-k="short" maxlength="8" spellcheck="false"></div>
+            <div><label>Record</label><input data-k="record" maxlength="9" spellcheck="false"></div>
+            <div style="flex:0 0 64px"><label>Colour</label><input type="color" data-k="color"></div></div>
+          <button class="clear-logo" style="margin-top:10px">Remove the logo</button>
+        </div>
+      </div>
+    </div>`).join("");
+  for (const box of $("teams").children) {
+    const side = box.dataset.side;
+    for (const el of box.querySelectorAll("[data-k]")) el.oninput = () => later(el, () => config({ [side]: { [el.dataset.k]: el.value } }));
+    const setLogo = async f => post("/api/logo", { side, data: await readFile(f) });
+    box.querySelector(".logo-box").onclick = () => pickFile(setLogo);
+    dropBox(box.querySelector(".logo-box"), setLogo);
+    box.querySelector(".clear-logo").onclick = () => post("/api/logo", { side });
+  }
+  $("mb-rules").innerHTML = Object.entries(state.map_bans.rules_names).map(([k, n]) => `<button data-r="${k}">${esc(n)}</button>`).join("");
+  for (const b of $("mb-rules").children) b.onclick = () => {
+    if (b.dataset.r !== state.map_bans.rules && (!state.map_bans.steps.some(s => s.map && !s.auto) || confirm("Change the rules? The map bans so far are cleared.")))
+      config({ map_bans: { rules: b.dataset.r } });
+  };
+}
+
+function apply(s) {
+  const first = !state;
+  state = s;
+  const cfg = s.config, app = s.app, ov = s.overlay;
+  showUpdate(app.update);
+  if (first) build();
+  $("status").textContent = ov.over ? `Series over: ${cfg[ov.left.score > ov.right.score ? "left" : "right"].name} wins`
+    : `Map ${ov.map_no || 1}${ov.map ? " · " + ov.map : ""} · ${ov.left.score}-${ov.right.score}`;
+  setIfIdle($("style"), String(cfg.overlay.style)); setIfIdle($("style2"), String(cfg.overlay.style));
+  // The series.
+  for (const box of $("series").children) {
+    const side = box.dataset.side;
+    box.style.setProperty("--c", cfg[side].color);
+    box.querySelector("h3").textContent = cfg[side].name;
+    box.querySelector(".n").textContent = ov[side].score;
+    box.querySelector(".won").disabled = ov.over;
+    box.querySelector(".undo").disabled = !ov[side].score;
+  }
+  $("draw").disabled = ov.over;
+  const maps = s.map_bans.steps.filter(x => x.map_no);
+  const current = ov.over ? null : (maps.find(m => !m.winner) || {}).map_no;
+  const mapsHtml = maps.map(m => `<div class="${m.map_no === current ? "now" : ""}"><span>Map ${m.map_no}${m.map_no === current ? " · now" : ""}</span>
+    <b>${esc(m.map || (m.mode ? s.map_bans.modes[m.mode] : "—"))}</b><span>${m.winner === "draw" ? "Draw" : m.winner ? esc(teamName(m.winner)) + " won" : m.map_no < (current || 99) ? "" : "&nbsp;"}</span></div>`).join("");
+  if ($("maps").innerHTML !== mapsHtml) $("maps").innerHTML = mapsHtml;
+  setIfIdle($("first-to"), String(cfg.first_to));
+  // The overlay's options.
+  $("show-logos").checked = cfg.overlay.logos !== false;
+  $("show-records").checked = cfg.overlay.records !== false;
+  $("show-slashes").checked = cfg.overlay.slashes !== false;
+  setIfIdle($("accent"), cfg.overlay.accent || "#ff7c01");
+  setIfIdle($("y"), cfg.overlay.y || 0);
+  $("y-v").textContent = ($("y").value > 0 ? "+" : "") + $("y").value + " px";
+  // The teams.
+  for (const box of $("teams").children) {
+    const t = cfg[box.dataset.side];
+    box.style.setProperty("--c", t.color);
+    for (const el of box.querySelectorAll("[data-k]")) setIfIdle(el, t[el.dataset.k] || "");
+    const img = box.querySelector(".logo-box img");
+    if ((img.dataset.logo || "") !== t.logo) { img.dataset.logo = t.logo; img.src = t.logo ? `/${t.logo}?t=${Date.now()}` : ""; }
+    box.querySelector(".clear-logo").disabled = !t.logo;
+  }
+  const tl = cfg.tournament_logo || "assets/logo.png";
+  if ($("tlogo-img").dataset.logo !== tl) { $("tlogo-img").dataset.logo = tl; $("tlogo-img").src = `/${tl}?t=${Date.now()}`; }
+  $("tlogo-clear").disabled = !cfg.tournament_logo;
+  setIfIdle($("info"), cfg.info || "");
+  applyMapBans(s);
+  applyPool(s);
+  // Outputs.
+  $("url-overlay").textContent = `http://localhost:${app.port}/overlay`;
+  $("url-bans").textContent = $("url-bans2").textContent = `http://localhost:${app.port}/map-bans`;
+  $("lan-box").hidden = !app.lan_url;
+  if (app.lan_url) $("url-lan").textContent = app.lan_url + "/overlay";
+  if (document.activeElement !== $("network")) $("network").checked = app.network;
+}
+
+// --- map bans -----------------------------------------------------------------
+const mbSave = steps => post("/api/config", { map_bans: { steps } });
+const mbChoices = () => state.map_bans.steps.map(x => ({ map: x.auto ? "" : x.map }));
+document.querySelectorAll("[data-team-a]").forEach(b => b.onchange = () => {
+  const side = b.checked ? b.dataset.teamA : (b.dataset.teamA === "left" ? "right" : "left");
+  if (side !== state.map_bans.team_a) config({ map_bans: { team_a: side } });
+});
+$("mb-clear").onclick = () => { if (confirm("Clear the map bans and picks?")) mbSave([]); };
+$("mb-bg").onchange = e => config({ map_bans: { bg: e.target.checked } });
+function applyMapBans(s) {
+  const mb = s.map_bans, cfg = s.config, tri = teamName, a = mb.team_a, b = a === "left" ? "right" : "left";
+  for (const x of $("mb-rules").children) x.classList.toggle("on", x.dataset.r === mb.rules);
+  document.querySelectorAll("[data-team-a]").forEach(box => {
+    box.checked = box.dataset.teamA === a;
+    box.nextElementSibling.textContent = `${tri(box.dataset.teamA)} (${box.dataset.teamA} team)`;
+  });
+  $("mb-bg").checked = cfg.map_bans.bg !== false;
+  $("mb-order").textContent = mb.rules === "owcs"
+    ? `OWCS: map 1 is Control, picked by ${tri(a)} (Team A). After each map, the team that lost it picks the next map, from a mode not played yet (once every mode has been played, any mode not played since). A map is never played twice; no map bans. After a draw, the team that didn't pick that map picks.`
+    : `NACE: each map has its mode. The teams ban maps of that mode in turn, then a team picks one (Team A is ${tri(a)}). The tiebreakers are the map of that mode left over.`;
+  const box = $("mb-steps"), current = s.overlay.over ? null : s.overlay.map_no;
+  const key = JSON.stringify([mb.steps, mb.rules, cfg.left.short, cfg.left.name, cfg.right.short, cfg.right.name, s.overlay.over]);
+  if (box.dataset.key === key || box.contains(document.activeElement) && document.activeElement.tagName === "SELECT") return;
+  box.dataset.key = key;
+  const VERB = { ban: "bans", pick: "picks", decider: "Tiebreaker" };
+  box.innerHTML = mb.steps.map((st, i) => {
+    const who = st.action === "decider" ? `<span class="decider">Tiebreaker</span>`
+      : `<span><b>${st.team ? esc(tri(st.team)) : "Loser of map " + (st.map_no - 1)}</b> <span class="${st.action}">${VERB[st.action]}</span></span>`;
+    const opts = st.options.slice();
+    if (st.map && !opts.includes(st.map)) opts.push(st.map);
+    const firstOpt = st.auto ? `<option value="">${esc(st.map)} (the one left)</option>` : '<option value="">—</option>';
+    const sel = `<select data-step="${i}">${firstOpt}${opts.map(m => `<option ${m === st.map && !st.auto ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>`;
+    const mode = st.mode ? mb.modes[st.mode] : "Any mode left";
+    const res = st.map_no ? `<div class="res"><span class="mode" style="flex:0 0 48px">Map ${st.map_no}</span>` + ["left", "draw", "right"].map(w =>
+      `<button data-res="${st.map_no}" data-w="${w}" class="${st.winner === w ? "on" : ""}">${w === "draw" ? "Draw" : esc(tri(w)) + " won"}</button>`).join("") + "</div>" : "<span></span>";
+    const later = st.map_no && current && st.map_no > current + 1 || s.overlay.over && st.map_no && !st.winner;
+    return `<div class="mb-step${later ? " later" : ""}"><span class="n">${i + 1}</span><span class="mode">${esc(mode)}</span>${who}${sel}${res}</div>`;
+  }).join("");
+  box.querySelectorAll("[data-step]").forEach(sel => sel.onchange = () => {
+    const list = mbChoices(); list[sel.dataset.step].map = sel.value; mbSave(list);
+  });
+  box.querySelectorAll("[data-res]").forEach(btn => btn.onclick = () => {
+    const results = state.map_bans.steps.filter(x => x.map_no).map(x => x.winner || "");
+    const i = Number(btn.dataset.res) - 1;
+    while (results.length <= i) results.push("");
+    results[i] = results[i] === btn.dataset.w ? "" : btn.dataset.w;
+    while (results.length && !results[results.length - 1]) results.pop();
+    config({ map_bans: { results } });
+  });
+}
+
+// --- the map pool ---------------------------------------------------------------
+let artFor = null;
+function applyPool(s) {
+  const mb = s.map_bans, box = $("pool"), key = JSON.stringify([mb.pool, mb.art]);
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.innerHTML = Object.entries(mb.all_maps).map(([mode, list]) => `<div><h3>${esc(mb.modes[mode])}</h3>` + list.map(m =>
+      `<label><input type="checkbox" data-mode="${mode}" value="${esc(m)}" ${mb.pool[mode].includes(m) ? "checked" : ""}> ${esc(m)}
+        <button class="pic${mb.art[m] ? " has" : ""}" data-art="${esc(m)}" title="${mb.art[m] ? "Has a picture: click to change it" : "No picture yet: click to add one"}">Picture</button></label>`).join("") + "</div>").join("");
+    box.querySelectorAll("input").forEach(i => i.onchange = () => {
+      const pool = {};
+      for (const mode of Object.keys(mb.all_maps)) pool[mode] = [...box.querySelectorAll(`input[data-mode="${mode}"]:checked`)].map(x => x.value);
+      config({ map_bans: { pool } });
+    });
+    box.querySelectorAll("[data-art]").forEach(b => b.onclick = e => { e.preventDefault(); artFor = b.dataset.art; $("art-file").click(); });
+  }
+  const same = Object.keys(mb.current_pool).every(m => JSON.stringify(mb.pool[m]) === JSON.stringify(mb.current_pool[m]));
+  const n = Object.values(mb.pool).reduce((t, l) => t + l.length, 0);
+  $("pool-note").textContent = same ? "The current competitive pool (OWCS 2026 Stage 3)." : `${n} maps (not the current competitive pool).`;
+  $("pool-current").disabled = same;
+}
+$("art-file").onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (f && artFor) post("/api/map-art", { map: artFor, data: await readFile(f) });
+};
+$("pool-current").onclick = () => config({ map_bans: { pool: null } });
+
+// --- the rest of the controls ---------------------------------------------------------
+$("style").onchange = $("style2").onchange = e => config({ overlay: { style: Number(e.target.value) } });
+$("first-to").onchange = e => {
+  if (!state.map_bans.steps.some(s => s.map && !s.auto) || confirm("Change the series length? The map bans so far are cleared."))
+    config({ first_to: Number(e.target.value) });
+  else e.target.value = String(state.config.first_to);
+};
+$("draw").onclick = () => post("/api/result", { side: "draw", delta: 1 });
+$("new-series").onclick = () => { if (confirm("Start a new series: scores and map bans cleared?")) post("/api/series/reset"); };
+for (const [id, key] of [["show-logos", "logos"], ["show-records", "records"], ["show-slashes", "slashes"]])
+  $(id).onchange = e => config({ overlay: { [key]: e.target.checked } });
+$("accent").oninput = e => later(e.target, () => config({ overlay: { accent: e.target.value } }));
+$("y").oninput = e => { $("y-v").textContent = (e.target.value > 0 ? "+" : "") + e.target.value + " px"; later(e.target, () => config({ overlay: { y: Number(e.target.value) } }), 120); };
+$("info").oninput = e => later(e.target, () => config({ info: e.target.value }));
+const setTLogo = async f => post("/api/logo", { data: await readFile(f) });
+$("tlogo-pick").onclick = $("tlogo-box").onclick = () => pickFile(setTLogo);
+dropBox($("tlogo-box"), setTLogo);
+$("tlogo-clear").onclick = () => post("/api/logo", {});
+$("network").onchange = e => post("/api/network", { on: e.target.checked });
+for (const b of document.querySelectorAll("[data-copy]")) b.onclick = () => navigator.clipboard.writeText($(b.dataset.copy).textContent);
+// After "Use Global Information": the teams are new.
+window.onEngineGlobal = () => fetch("/api/state").then(r => r.json()).then(apply).catch(() => {});
+
+function fitPreviews() { for (const p of document.querySelectorAll(".preview")) p.querySelector("iframe").style.transform = `scale(${p.clientWidth / 1920})`; }
+addEventListener("resize", fitPreviews);
+new ResizeObserver(fitPreviews).observe(document.body);
+async function poll() {
+  try { apply(await (await fetch("/api/state")).json()); } catch (e) {}
+  setTimeout(poll, 1000);
+}
+async function pollLog() {
+  try {
+    const d = await (await fetch(`/api/log?after=${logAfter}`)).json(), box = $("log");
+    for (const l of d.lines) {
+      logAfter = l.id;
+      const div = document.createElement("div");
+      div.className = l.level;
+      div.innerHTML = `<span class="t">${l.time}</span>`;
+      div.appendChild(document.createTextNode(l.message));
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch (e) {}
+  setTimeout(pollLog, 1500);
+}
+poll(); pollLog(); fitPreviews();
+</script>
+</body>
+</html>

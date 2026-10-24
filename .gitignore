@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+config.json
+config.json.tmp
+
+/logos/
+/maps/
+smoke-test.txt
+_update/
+build/
+dist/

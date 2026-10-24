@@ -1,0 +1,5 @@
+Anton (Anton-Regular.ttf): Copyright 2020 The Anton Project Authors. SIL Open Font License 1.1.
+Inter (Inter.ttf): Copyright The Inter Project Authors. SIL Open Font License 1.1.
+Bebas Neue (BebasNeue.ttf): Copyright Dharma Type. SIL Open Font License 1.1. Stands in for Chinese Rocks (SCC 1).
+Saira Condensed (SairaCondensed-Bold.ttf): Copyright The Saira Project Authors. SIL Open Font License 1.1. Stands in for Industry (SCC 3).
+Tungsten Bold (Tungsten-Bold.ttf): the same file the SCC VALORANT HUD ships. Stands in for Dharma Gothic E (map bans).

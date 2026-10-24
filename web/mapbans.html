@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Map bans</title>
+<!--
+  The map bans graphic (1920x1080): /map-bans. Rebuilt from the GT title "OW2
+  Maps Modes": the teams and maps won along the top, the five modes, and the
+  map pool under each mode. Maps not played are grey, banned maps say who
+  banned them, picked maps are in colour, and a map that's been played shows
+  the winner's logo. Live from the control panel's Map Bans page.
+
+  Behind it, the SCC background loop over the boards' backdrop (?bg=0: no
+  background, for the GFX Engine, which puts its own loop behind it).
+-->
+<style>
+  @font-face { font-family: "Map Font"; src: local("Dharma Gothic E Bold"), local("DharmaGothicE-Bold"), local("Dharma Gothic E"), url("fonts/Tungsten-Bold.ttf") format("truetype"); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
+  .bg { position: absolute; inset: 0; background: #000; isolation: isolate; }
+  .bg img, .bg video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .bg img { opacity: .749; }
+  .bg video { mix-blend-mode: screen; }
+  .stage { position: absolute; inset: 0; font-family: "Map Font", "Tungsten", "Anton", sans-serif; --navy: #18212f; --accent: #ff7c01; }
+  .abs { position: absolute; }
+  .txt { position: absolute; display: flex; align-items: center; white-space: nowrap; overflow: hidden; line-height: 1; text-transform: uppercase; }
+  .logo { position: absolute; object-fit: contain; }
+  .logo[src=""] { visibility: hidden; }
+  .name { top: 0; height: 146px; font-size: 74px; color: #000; padding-bottom: 6px; box-sizing: border-box; }
+  .record { top: 94px; height: 40px; font-size: 48px; color: #000; }
+  .score { top: 0; width: 144px; height: 146px; font-size: 128px; color: #fff; justify-content: center; overflow: visible; padding-top: 8px; box-sizing: border-box; }
+  .info { left: 770px; top: 110px; width: 382px; height: 33px; font-size: 43px; color: #000; justify-content: center; }
+
+  .tile { position: absolute; width: 374px; height: 213px; overflow: hidden; background: #1b2433; }
+  .tile .art { position: absolute; inset: 0; background: center / cover no-repeat; transition: filter .5s; }
+  .tile.grey .art { filter: grayscale(1) brightness(.82); }
+  .tile .band { position: absolute; left: 0; right: 0; bottom: 0; height: 39px; background: rgba(0, 0, 0, .66); color: #fff;
+                display: flex; align-items: center; justify-content: center; font-size: 36px; text-transform: uppercase; white-space: nowrap; }
+  .tile .dim { position: absolute; left: 0; top: 0; right: 0; bottom: 39px; background: rgba(0, 0, 0, .5); display: none; }
+  .tile.dimmed .dim { display: block; }
+  .tile .win { position: absolute; left: 102px; top: 20px; width: 170px; height: 136px; object-fit: contain; }
+  .tile .win[src=""] { display: none; }
+  .tile .big { position: absolute; left: 0; right: 0; top: 0; bottom: 39px; display: flex; align-items: center; justify-content: center;
+               color: #fff; font-size: 64px; text-transform: uppercase; text-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+  .tile .tag { position: absolute; left: 0; top: 0; padding: 5px 10px 3px; background: var(--navy); color: #fff; font-size: 27px; line-height: 1;
+               text-transform: uppercase; white-space: nowrap; }
+  .tile .tag:empty { display: none; }
+  .tile .tag.ban { background: #b3262d; }
+  .tile.next { box-shadow: inset 0 0 0 5px var(--accent); }
+  .tile.next .tag { background: var(--accent); color: #000; }
+
+  /* In: the top slides down, then each mode's column rises, a beat apart. */
+  .stage:not(.play) .top, .stage:not(.play) .col { visibility: hidden; }
+  .shown .top, .shown .col { animation: none !important; }
+  .play .top { animation: down .7s cubic-bezier(.645, .045, .355, 1) both; }
+  .play .col { animation: rise .7s cubic-bezier(.645, .045, .355, 1) both; }
+  @keyframes down { from { transform: translateY(-270px); } to { transform: none; } }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="bg" id="bg" hidden><img src="loop/backdrop.png" alt=""><video src="loop/scc-bg-loop.webm" autoplay muted loop playsinline></video></div>
+<div class="stage" id="stage">
+  <div class="top">
+    <img class="abs" src="mapbans/topbar.png" style="left:0;top:0;width:1920px;height:146px" alt="">
+    <img class="abs" src="mapbans/modes.png" style="left:0;top:196px;width:1920px;height:92px" alt="">
+    <img class="logo" id="logo-l" src="" style="left:4px;top:6px;width:142px;height:136px" alt="">
+    <div class="txt name" id="name-l" style="left:147px;width:472px"></div>
+    <div class="txt record" id="rec-l" style="left:526px;width:90px;justify-content:flex-end"></div>
+    <div class="txt score" id="score-l" style="left:624px"></div>
+    <img class="logo" id="tlogo" src="" style="left:768px;top:3px;width:382px;height:105px" alt="">
+    <div class="txt info" id="info"></div>
+    <div class="txt score" id="score-r" style="left:1151px"></div>
+    <div class="txt name" id="name-r" style="left:1304px;width:468px"></div>
+    <div class="txt record" id="rec-r" style="left:1307px;width:85px"></div>
+    <img class="logo" id="logo-r" src="" style="left:1772px;top:6px;width:142px;height:136px" alt="">
+  </div>
+  <div id="grid"></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const X = [15, 395, 774, 1154, 1533], TOP = 337, BOTTOM = 992;   // the design's columns and rows
+  const bgParam = new URLSearchParams(location.search).get("bg");
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const url = p => p ? "/" + String(p).replace(/^\//, "") : "";
+  for (const img of document.querySelectorAll("img.logo")) {
+    img.onerror = () => { img.style.visibility = "hidden"; };
+    img.onload = () => { img.style.visibility = ""; };
+  }
+  const setText = (id, t) => { const el = $(id); if (el.textContent !== String(t)) el.textContent = t; };
+  const setSrc = (id, src) => { const el = $(id), want = url(src); if (el.getAttribute("src") !== want) el.setAttribute("src", want); };
+  function fit(el) {
+    el.style.fontSize = "";
+    const full = parseFloat(getComputedStyle(el).fontSize);
+    let size = full;
+    while (el.scrollWidth > el.clientWidth + 1 && size > full * 0.4) { size -= 2; el.style.fontSize = size + "px"; }
+  }
+  let shown = "", gridKey = "";
+
+  function tileHtml(t, v, x, y, h) {
+    const team = t.team ? v[t.team] : null, picker = t.picked_by ? v[t.picked_by] : null;
+    const cls = ["tile"];
+    let tag = "", big = "", win = "";
+    if (t.state === "open" || t.state === "ban") cls.push("grey");
+    if (t.state === "ban") { cls.push("dimmed"); tag = `<div class="tag ban">Ban · ${esc(team ? team.short : "")}</div>`; big = "Banned"; }
+    if (t.state === "picked") tag = `<div class="tag">Map ${t.map_no}${picker ? " · " + esc(picker.short) : ""}</div>`;
+    if (t.state === "next") { cls.push("next"); tag = `<div class="tag">Map ${t.map_no} · Up next</div>`; }
+    if (t.state === "won") {
+      cls.push("dimmed");
+      tag = `<div class="tag">Map ${t.map_no}</div>`;
+      if (t.draw) big = "Draw";
+      else if (team && team.logo) win = `<img class="win" src="${esc(url(team.logo))}" alt="">`;
+      else if (team) big = esc(team.short);
+    }
+    const band = t.named ? "" : `<div class="band">${esc(t.map)}</div>`;
+    return `<div class="${cls.join(" ")}" style="left:${x}px;top:${y}px;height:${h}px">
+      <div class="art" style="${t.art ? `background-image:url('${esc(t.art)}')` : ""}"></div>${band}
+      <div class="dim"></div>${win}${big ? `<div class="big">${big}</div>` : ""}${tag}</div>`;
+  }
+
+  function render(v) {
+    const key = JSON.stringify(v);
+    if (key === shown) return;
+    shown = key;
+    $("bg").hidden = bgParam === "0" || (bgParam !== "1" && v.bg === false);
+    $("stage").style.setProperty("--accent", v.show.accent || "#ff7c01");
+    for (const [side, s] of [["left", "l"], ["right", "r"]]) {
+      const t = v[side];
+      setText(`name-${s}`, t.name); setText(`rec-${s}`, v.show.records === false ? "" : t.record); setText(`score-${s}`, t.score);
+      setSrc(`logo-${s}`, t.logo);
+    }
+    setSrc("tlogo", v.logo);
+    setText("info", v.info || "");
+    // The pool, a column per mode.
+    const rows = Math.max(3, ...v.columns.map(c => c.maps.length));
+    const h = Math.min(213, Math.floor((BOTTOM - TOP - (rows - 1) * 8) / rows));
+    const html = v.columns.map((c, i) => `<div class="col" style="animation-delay:${0.35 + i * 0.12}s">` +
+      c.maps.map((t, r) => tileHtml(t, v, X[i], TOP + r * (h + 8), h)).join("") + "</div>").join("");
+    if (html !== gridKey) { gridKey = html; $("grid").innerHTML = html; }
+    document.fonts.ready.then(() => ["name-l", "name-r", "info"].forEach(id => fit($(id))));
+    if (!$("stage").classList.contains("play")) setTimeout(() => $("stage").classList.add("shown"), 2500);
+    $("stage").classList.add("play");
+  }
+
+  let polling = false;
+  async function poll() {
+    try { render(await (await fetch("/api/map-bans", { cache: "no-store" })).json()); } catch (e) { /* the HUD is restarting */ }
+    setTimeout(poll, 500);
+  }
+  try {
+    const es = new EventSource("/api/stream?what=map-bans");
+    es.onmessage = e => render(JSON.parse(e.data));
+    es.onerror = () => { if (!polling && es.readyState === EventSource.CLOSED) { polling = true; poll(); } };
+  } catch (e) { polling = true; poll(); }
+})();
+</script>
+</body>
+</html>
