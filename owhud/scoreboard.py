@@ -154,48 +154,45 @@ def blobs(strip, tall):
     return out
 
 
-def compose(strip, spans, tall):
-    """A line of black-on-white words: LABEL, the first number, LABEL, the
-    second... Returns the image and each number's x range in it."""
-    from PIL import Image, ImageDraw, ImageFont, ImageOps
-    from .config import WEB_DIR
-    import os
-    H = 48
-    font = ImageFont.truetype(os.path.join(WEB_DIR, "fonts", "Inter.ttf"), int(H * 0.72))
+def pieces(strip, spans):
+    """Each number cut out of the strip: black on white, 48 pixels high."""
+    from PIL import ImageOps
     mask, bg = _ink(strip), _background(strip)
     contrast = strip.convert("L").point(lambda v: min(255, abs(v - bg) * 255 // 110))
-    pieces = []
+    out = []
     for x0, x1 in spans:
         box = mask.crop((x0, 0, x1, mask.height)).getbbox() or (0, 0, x1 - x0, mask.height)
         crop = contrast.crop((x0, max(0, box[1] - 2), x1, min(mask.height, box[3] + 2)))
-        scale = H / max(1, crop.height)
-        crop = crop.resize((max(1, int(crop.width * scale)), H))
-        pieces.append(ImageOps.invert(crop))
-    lw = int(font.getlength(LABEL))
-    gap = H // 2
-    width = 40 + sum(lw + gap + p.width + gap for p in pieces) + lw + 40
-    img = Image.new("L", (width, H + 60), 255)
+        scale = 48 / max(1, crop.height)
+        out.append(ImageOps.invert(crop.resize((max(1, int(crop.width * scale)), 48))))
+    return out
+
+
+def compose(piece):
+    """One number between two label words ("max 5 max"), so it's read as
+    part of a line rather than a lone digit."""
+    from PIL import Image, ImageDraw, ImageFont
+    from .config import WEB_DIR
+    import os
+    H = piece.height
+    font = ImageFont.truetype(os.path.join(WEB_DIR, "fonts", "Inter.ttf"), int(H * 0.72))
+    lw, gap = int(font.getlength(LABEL)), int(H * 0.6)
+    img = Image.new("L", (40 + lw + gap + piece.width + gap + lw + 40, H + 60), 255)
     d = ImageDraw.Draw(img)
-    x, where = 40, []
-    for p in pieces:
-        d.text((x, 30 + H), LABEL, font=font, fill=0, anchor="ls")
-        x += lw + gap
-        img.paste(p, (x, 30))
-        where.append((x, x + p.width))
-        x += p.width + gap
-    d.text((x, 30 + H), LABEL, font=font, fill=0, anchor="ls")
-    return img, where
+    d.text((40, 30 + H), LABEL, font=font, fill=0, anchor="ls")
+    img.paste(piece, (40 + lw + gap, 30))
+    d.text((40 + lw + gap + piece.width + gap, 30 + H), LABEL, font=font, fill=0, anchor="ls")
+    return img
 
 
-def read_numbers(words, where):
-    """The numbers read in a composed line, one per place (None: not read)."""
-    texts = [""] * len(where)
-    for t, x, y, w, h in sorted(words, key=lambda w: w[1]):
-        t = t.replace(LABEL, "") if t != LABEL else ""
-        for i, (a, b) in enumerate(where):
-            if x < b and x + w > a:      # (overlaps the number: the label's letters are dropped)
-                texts[i] += re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", t)
-    return [number(t) for t in texts]   # ("11" ",234": one number)
+def read_number(words):
+    """The number in a composed line's words (None: not read)."""
+    text = "".join(w[0] for w in sorted(words, key=lambda w: w[1])).replace(LABEL, " ").strip()
+    text = re.sub(r"^[^\dOoQlI|SBZzg]+|[^\dOoQlI|SBZzg,.]+$", "", text).replace(" ", "")
+    return number(text)
+
+
+debug = []     # (what the last screenshot's numbers were read as)
 
 
 def image_rows(image, words):
@@ -216,8 +213,11 @@ def image_rows(image, words):
                 break
         if len(spans) < 4:
             continue
-        line, where = compose(strip, spans, c["h"])
-        values = read_numbers(_ocr.words(line), where)
+        values = []
+        for piece in pieces(strip, spans):
+            words = _ocr.words(compose(piece))
+            values.append(read_number(words))
+            debug.append(f"{c['name']}: {' '.join(w[0] for w in words)!r} -> {values[-1]}")
         if sum(v is not None for v in values) < 4:
             continue      # (not a player's row)
         nums = [(v, left + (a + b) / 2) for v, (a, b) in zip(values, spans)]
@@ -369,6 +369,7 @@ def parse(words, width, rows=None):
 
 def read(image):
     """A screenshot (a PIL image) -> parse()'s result."""
+    debug.clear()
     words = ocr_words(image)
     return parse(words, image.width, image_rows(image, words))
 
