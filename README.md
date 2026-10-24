@@ -57,7 +57,8 @@ the map bans.
   on the page (or paste it with Ctrl+V, or click to choose one) and the names
   and numbers are read from it with Windows' text recognition: a player goes
   to the row with their name, the teams to the sides whose names match, and
-  anything that couldn't be read is listed to type in. *Swap the teams* if
+  anything that couldn't be read is listed to type in. (Each build reads a
+  made-up scoreboard to check this; the heroes aren't read, pick them.) *Swap the teams* if
   they landed the wrong way round; *Clear the stats* for the next map. They go to the GFX Engine's Team
   stats (DMG, Kills, Deaths) and Player stats (the same + Healing).
 
