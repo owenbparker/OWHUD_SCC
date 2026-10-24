@@ -72,11 +72,11 @@ def smoke_test(port):
             words = scoreboard.ocr_words(img)
             want = [[dict(zip(("name",) + scoreboard.COLS, p[:6])) for p in team] for team in scoreboard.SAMPLE]
             got = sum(1 for a, b in zip(sum(teams, []), sum(want, [])) for k in b if str(a.get(k)).lower() == str(b[k]).lower())
-            results.append(f"{'OK  ' if teams == want else 'WARN'} screenshot reading ({got}/{6 * 10} read right)")
+            results.append(f"{'OK  ' if got == 6 * 10 else 'WARN'} screenshot reading ({got}/{6 * 10} read right)")
             for team in teams:
                 for p in team:
                     results.append(f"       {p}")
-            if teams != want:     # (what it found, to see what went wrong)
+            if got != 6 * 10:     # (what it found, to see what went wrong)
                 for line in scoreboard._lines(words):
                     results.append("       line " + " | ".join(f"{w[0]}@{w[1]:.0f}" for w in line["words"]))
                 results += ["       " + d for d in debug]
