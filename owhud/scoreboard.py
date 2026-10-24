@@ -175,7 +175,24 @@ def single(piece):
     return piece.width < piece.height * 0.75
 
 
-def compose(piece):
+# Ways to write a number for the recognition, tried in turn until one reads:
+# (written TIMES times?, height, letters thickened?). A lone digit always is.
+VARIANTS = [(False, 48, False), (True, 48, False), (True, 34, False), (True, 48, True), (True, 64, False)]
+
+
+def variant(piece, n):
+    """The piece as VARIANTS[n] writes it, and whether it's repeated."""
+    from PIL import ImageFilter
+    repeat, height, thick = VARIANTS[n]
+    repeat = repeat or single(piece)
+    if height != piece.height:
+        piece = piece.resize((max(1, piece.width * height // piece.height), height))
+    if thick:
+        piece = piece.filter(ImageFilter.MinFilter(3))
+    return piece, repeat
+
+
+def compose(piece, repeat=None):
     """One number between two label words ("max 5 max"), so it's read as
     part of a line rather than a lone digit. Even so, Windows' text
     recognition won't read a single digit, so one is written TIMES times."""
@@ -183,7 +200,7 @@ def compose(piece):
     from .config import WEB_DIR
     import os
     H = piece.height
-    if single(piece):
+    if single(piece) if repeat is None else repeat:
         step = piece.width + max(2, H // 10)
         many = Image.new("L", (step * (TIMES - 1) + piece.width, H), 255)
         for i in range(TIMES):
@@ -236,9 +253,17 @@ def image_rows(image, words):
             continue
         values = []
         for piece in pieces(strip, spans):
-            words = _ocr.words(compose(piece))
-            values.append(read_number(words, single(piece)))
-            debug.append(f"{c['name']}: {' '.join(w[0] for w in words)!r} -> {values[-1]}")
+            value = None
+            for n in range(len(VARIANTS)):
+                p, repeat = variant(piece, n)
+                if n and repeat and VARIANTS[n - 1][1:] == VARIANTS[n][1:] and single(piece):
+                    continue      # (the same as the last try)
+                words = _ocr.words(compose(p, repeat))
+                value = read_number(words, repeat)
+                debug.append(f"{c['name']}: {' '.join(w[0] for w in words)!r} -> {value}")
+                if value is not None:
+                    break
+            values.append(value)
         if sum(v is not None for v in values) < 4:
             continue      # (not a player's row)
         nums = [(v, left + (a + b) / 2) for v, (a, b) in zip(values, spans)]
