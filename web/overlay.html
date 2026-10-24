@@ -39,6 +39,11 @@
   .slash.l { left: 577px; -webkit-mask-image: url("assets/overlay/slash_left.png"); mask-image: url("assets/overlay/slash_left.png"); }
   .slash.r { left: 1326px; -webkit-mask-image: url("assets/overlay/slash_right.png"); mask-image: url("assets/overlay/slash_right.png"); }
   .stage[data-style="2"] .slash, .no-slashes .slash { display: none; }
+  /* (with the records shown, a name has the rest of the bar beside its record) */
+  #s12-name-l { left: 141px; width: 382px; }
+  #s12-name-r { left: 1395px; width: 382px; }
+  .stage:not(.no-records) #s12-name-l { left: 241px; width: 282px; }
+  .stage:not(.no-records) #s12-name-r { width: 282px; }
 
   /* SCC 3: white name boxes with the maps won in grey, and the map and the
      tournament logo at the top in the middle. */
@@ -57,11 +62,11 @@
     <img class="abs" src="assets/overlay/bar_left.png" style="left:0;top:19px;width:591px;height:42px" alt="">
     <img class="abs" src="assets/overlay/bar_right.png" style="left:1329px;top:19px;width:591px;height:42px" alt="">
     <div class="slash l" id="s12-slash-l"></div><div class="slash r" id="s12-slash-r"></div>
-    <div class="txt name" id="s12-name-l" style="left:141px;width:382px;justify-content:flex-end"></div>
+    <div class="txt name" id="s12-name-l" style="justify-content:flex-end"></div>
     <div class="txt record" id="s12-rec-l" style="left:141px;width:92px"></div>
     <div class="txt score" id="s12-score-l" style="left:524px;justify-content:flex-end"></div>
     <img class="logo team" id="s12-logo-l" src="" style="left:0;top:-12px;width:154px;height:107px" alt="">
-    <div class="txt name" id="s12-name-r" style="left:1395px;width:382px"></div>
+    <div class="txt name" id="s12-name-r"></div>
     <div class="txt record" id="s12-rec-r" style="left:1685px;width:92px;justify-content:flex-end"></div>
     <div class="txt score" id="s12-score-r" style="left:1355px"></div>
     <img class="logo team" id="s12-logo-r" src="" style="left:1766px;top:-12px;width:154px;height:107px" alt="">
@@ -93,15 +98,26 @@
   const forced = new URLSearchParams(location.search).get("style");
   for (const img of document.querySelectorAll("img.logo")) img.onerror = () => { img.style.visibility = "hidden"; };
   for (const img of document.querySelectorAll("img.logo")) img.onload = () => { img.style.visibility = ""; };
-  const setText = (id, t) => { const el = $(id); if (el.textContent !== String(t)) el.textContent = t; };
+  // (the text in a span, so fit() can measure it whichever way it's aligned)
+  const setText = (id, t) => {
+    const el = $(id);
+    if (el.textContent === String(t) && el.firstElementChild) return;
+    el.replaceChildren(Object.assign(document.createElement("span"), { textContent: t }));
+  };
   const setSrc = (id, src) => { const el = $(id), want = src ? "/" + src.replace(/^\//, "") : ""; if (el.getAttribute("src") !== want) el.setAttribute("src", want); };
   // A long name shrinks to fit its box.
-  function fit(id) {
-    const el = $(id);
+  // Text too long for its box shrinks until it fits (its width and height).
+  function fit(el) {
+    if (typeof el === "string") el = $(el);
+    const span = el.firstElementChild;
     el.style.fontSize = "";
+    if (!span) return;
     const full = parseFloat(getComputedStyle(el).fontSize);
     let size = full;
-    while (el.scrollWidth > el.clientWidth + 1 && size > full * 0.5) { size -= 1; el.style.fontSize = size + "px"; }
+    while ((span.offsetWidth > el.clientWidth + 1 || span.offsetHeight > el.clientHeight + 2) && size > full * 0.35) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
   }
   let shown = "";
   function render(v) {
@@ -125,7 +141,7 @@
     setText("s3-mapno", v.over ? "FINAL" : `MAP ${v.map_no || 1}`);
     setText("s3-firstto", `FIRST TO ${v.first_to}`);
     setSrc("s3-tlogo", v.logo);
-    document.fonts.ready.then(() => ["s12-name-l", "s12-name-r", "s3-name-l", "s3-name-r"].forEach(fit));
+    document.fonts.ready.then(() => ["s12-name-l", "s12-name-r", "s12-rec-l", "s12-rec-r", "s3-name-l", "s3-name-r", "s3-mapno", "s3-firstto"].forEach(id => fit(id)));
     stage.classList.add("on");
   }
   // Live from the HUD (server-sent events), polling if those don't work.

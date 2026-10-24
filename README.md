@@ -37,8 +37,10 @@ the map bans.
 - **Map Pool**: the maps on the graphic, a column per mode; *Current
   competitive pool* (OWCS 2026 Stage 3: Busan, Ilios, Oasis · Eichenwalde,
   Midtown, Paraíso · Grímsvötn, Havana, Route 66 · Esperança, New Queen Street,
-  Runasapi · Aatlis, New Junk City, Suravasa). *Picture* gives a map its
-  picture (Ilios, Paraíso and Grímsvötn have none built in).
+  Runasapi · Aatlis, New Junk City, Suravasa). *Picture* replaces a map's
+  picture (every map in the pool has one built in; Ilios, Paraíso and
+  Grímsvötn are Blizzard's own screenshots, via the OverFast API, styled like
+  the others).
 - **Map Bans**: the veto, step by step, with who won each map.
   - **OWCS** (2025-26 Official Rules 9.4): map 1 is Control, picked by Team A
     (the higher seed). After each map the team that lost it picks the next
@@ -49,6 +51,17 @@ the map bans.
     ban, A picks), Hybrid (B, A, B picks), Push (B ban, A picks), Flashpoint
     (B picks), Escort (A, B, A picks); tiebreakers Control then Push.
   - A drawn map adds a map to the series.
+- **Stats**: the post-game stats, typed in from the end-of-map scoreboard:
+  each team's 5 players, their hero (every hero, by role) and E / A / D / DMG
+  / H. *Clear the stats* for the next map. They go to the GFX Engine's Team
+  stats (DMG, Kills, Deaths) and Player stats (the same + Healing).
+
+Long names and lines shrink to fit their boxes on every design and on the map
+bans.
+
+Hero pictures are downloaded (Blizzard's portraits, via the OverFast API) into
+`heroes\` next to the app the first time the HUD is online; a picture can also
+be put there by hand, named like `soldier-76.png`.
 
 Fonts: the designs' own fonts are used when they're installed on the PC
 (Chinese Rocks for SCC 1, Industry for SCC 3, Dharma Gothic E for the map
@@ -58,9 +71,13 @@ bans); otherwise Bebas Neue, Saira Condensed and Tungsten stand in.
 
 "Overwatch HUD": `left_name`, `left_short`, `left_record`, `left_score` (and
 `right_…`), `first_to`, `best_of`, `map_number`, `map_name`, `map_mode`,
-`info`, and for each map `map1_name`, `map1_mode`, `map1_winner`…
+`info`, and for each map `map1_name`, `map1_mode`, `map1_winner`…; the
+stats: `left_p1_name`, `left_p1_hero`, `left_p1_hero_icon`, `left_p1_kills`,
+`left_p1_assists`, `left_p1_deaths`, `left_p1_damage`, `left_p1_healing`
+(p1 to p5, and `right_…`). The engine's player pictures show the heroes when
+they're set to champions / agents / heroes.
 **Use Global Information** takes the engine's team names, colours, logos and
-tournament logo.
+tournament logo, and the players' names for the stats.
 
 ## From source
 

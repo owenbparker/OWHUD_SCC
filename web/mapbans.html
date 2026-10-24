@@ -88,13 +88,25 @@
     img.onerror = () => { img.style.visibility = "hidden"; };
     img.onload = () => { img.style.visibility = ""; };
   }
-  const setText = (id, t) => { const el = $(id); if (el.textContent !== String(t)) el.textContent = t; };
+  // (the text in a span, so fit() can measure it whichever way it's aligned)
+  const setText = (id, t) => {
+    const el = $(id);
+    if (el.textContent === String(t) && el.firstElementChild) return;
+    el.replaceChildren(Object.assign(document.createElement("span"), { textContent: t }));
+  };
   const setSrc = (id, src) => { const el = $(id), want = url(src); if (el.getAttribute("src") !== want) el.setAttribute("src", want); };
+  // Text too long for its box shrinks until it fits (its width and height).
   function fit(el) {
+    if (typeof el === "string") el = $(el);
+    const span = el.firstElementChild;
     el.style.fontSize = "";
+    if (!span) return;
     const full = parseFloat(getComputedStyle(el).fontSize);
     let size = full;
-    while (el.scrollWidth > el.clientWidth + 1 && size > full * 0.4) { size -= 2; el.style.fontSize = size + "px"; }
+    while ((span.offsetWidth > el.clientWidth + 1 || span.offsetHeight > el.clientHeight + 2) && size > full * 0.35) {
+      size -= 1;
+      el.style.fontSize = size + "px";
+    }
   }
   let shown = "", gridKey = "";
 
@@ -138,7 +150,7 @@
     const html = v.columns.map((c, i) => `<div class="col" style="animation-delay:${0.35 + i * 0.12}s">` +
       c.maps.map((t, r) => tileHtml(t, v, X[i], TOP + r * (h + 8), h)).join("") + "</div>").join("");
     if (html !== gridKey) { gridKey = html; $("grid").innerHTML = html; }
-    document.fonts.ready.then(() => ["name-l", "name-r", "info"].forEach(id => fit($(id))));
+    document.fonts.ready.then(() => ["name-l", "name-r", "rec-l", "rec-r", "info"].forEach(id => fit(id)));
     if (!$("stage").classList.contains("play")) setTimeout(() => $("stage").classList.add("shown"), 2500);
     $("stage").classList.add("play");
   }

@@ -11,10 +11,10 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
-from . import maps
-from .config import DATA_DIR, LOGO_DIR, STYLES, web_file
+from . import heroes, maps
+from .config import DATA_DIR, LOGO_DIR, PLAYER, STAT_KEYS, STYLES, web_file
 from .enginelink import EngineLink, save_logo_bytes
 from .log import log, since
 from .updater import Updater, clean_up_old_update
@@ -37,6 +37,7 @@ class HudApp:
         self.server = None
         self.version = 0
         self._cond = threading.Condition()
+        self.heroes = heroes.Pictures()
         # The SCC GFX Engine: the series and the map bans go to it; its teams can come here.
         self.engine = EngineLink("Overwatch HUD", "overwatch", self._engine_snapshot, self._engine_apply_global,
                                  load=lambda: self.config.get().get("gfx_engine"),
@@ -61,6 +62,52 @@ class HudApp:
                 log(f"{cfg[after['winner']]['name']} wins the series")
         self.changed()
 
+    # --- post-game stats ------------------------------------------------------------
+
+    def stats(self, cfg=None):
+        """Each team's 5 players, cleaned up: {"left": [{name, hero, kills...}], "right": [...]}."""
+        cfg = cfg or self.config.get()
+        out = {}
+        for side in SIDES:
+            rows = list((cfg.get("stats") or {}).get(side) or [])[:5]
+            rows += [{}] * (5 - len(rows))
+            out[side] = []
+            for r in rows:
+                r = r if isinstance(r, dict) else {}
+                p = {"name": str(r.get("name") or "").strip()[:40], "hero": heroes.find(r.get("hero"))}
+                for k in STAT_KEYS:
+                    try:
+                        p[k] = max(0, int(float(r.get(k) or 0)))
+                    except (TypeError, ValueError):
+                        p[k] = 0
+                out[side].append(p)
+        return out
+
+    def set_stats(self, side, players):
+        if side not in SIDES or not isinstance(players, list):
+            raise ValueError("send a side and its players")
+        clean = self.stats({"stats": {side: players}})[side]
+        self.config.update({"stats": {side: clean}})
+        self.changed()
+
+    def clear_stats(self, names_too=False):
+        """New map: the numbers (and heroes) back to nothing; the players stay unless names_too."""
+        cur = self.stats()
+        new = {side: [dict(PLAYER, name="" if names_too else p["name"]) for p in cur[side]] for side in SIDES}
+        self.config.update({"stats": new})
+        log("Stats cleared")
+        self.changed()
+
+    def hero_icon_base(self):
+        """Where the GFX Engine's outputs find this HUD's hero pictures: this PC
+        if the engine is on it, else the HUD's address on the network."""
+        cfg = self.config.get()
+        port = self.server.port if self.server else cfg["http_port"]
+        host = (urlsplit(self.engine.url if "//" in (self.engine.url or "") else "http://" + (self.engine.url or "")).hostname or "")
+        if not host or host in ("localhost", "::1") or host.startswith("127.") or host == lan_ip():
+            return f"http://localhost:{port}"
+        return f"http://{lan_ip() or 'localhost'}:{port}"
+
     # --- what the pages see -------------------------------------------------------------
 
     def info(self):
@@ -76,7 +123,9 @@ class HudApp:
         return {"config": cfg, "app": self.info(), "overlay": self.overlay(), "styles": STYLES,
                 "map_bans": {"rules": rules, "rules_names": maps.RULES, "team_a": team_a, "pool": pool,
                              "all_maps": maps.ALL_MAPS, "current_pool": maps.CURRENT_POOL, "modes": maps.MODE_NAMES,
-                             "steps": maps.steps(cfg), "art": {m: bool(maps.art(m)[0]) for m in maps.MODE_OF}}}
+                             "steps": maps.steps(cfg), "art": {m: bool(maps.art(m)[0]) for m in maps.MODE_OF}},
+                "stats": self.stats(cfg),
+                "heroes": {"roles": heroes.ROLES, "pictures": {h: bool(heroes.picture(h)) for h in heroes.ROLE_OF}}}
 
     def overlay(self):
         """What the overlay and the map bans graphic show (besides the maps)."""
@@ -118,6 +167,15 @@ class HudApp:
             f[f"map{m['no']}_name"] = m["map"]
             f[f"map{m['no']}_mode"] = maps.MODE_NAMES.get(m["mode"], "")
             f[f"map{m['no']}_winner"] = cfg[m["winner"]]["name"] if m["winner"] in SIDES else ("Draw" if m["winner"] else "")
+        base = self.hero_icon_base()
+        for side, players in self.stats(cfg).items():
+            for n, p in enumerate(players, 1):
+                k = f"{side}_p{n}"
+                f[f"{k}_name"] = p["name"]
+                f[f"{k}_hero"] = p["hero"]
+                f[f"{k}_hero_icon"] = f"{base}/heroes/{heroes.slug(p['hero'])}" if p["hero"] and heroes.picture(p["hero"]) else ""
+                for s in STAT_KEYS:
+                    f[f"{k}_{s}"] = p[s]
         series = {side: {"name": cfg[side]["name"], "short": cfg[side]["short"], "score": ser["score"][side],
                          "color": cfg[side]["color"]} for side in SIDES}
         series["best_of"] = 2 * ser["first_to"] - 1
@@ -129,6 +187,20 @@ class HudApp:
     def _engine_apply_global(self, g, fetch):
         """The GFX Engine's teams (names, short names, colours, logos) and tournament logo into the HUD."""
         changes, done = {}, []
+        rosters = {}
+        try:   # (the teams' players, from the engine's team list: their in-game names)
+            sides = json.loads(fetch(self.engine.url + "/api/roster/links")).get("sides") or {}
+            rosters = {s: [m["ign"] or m["name"] for m in (sides.get(s) or {}).get("members") or [] if m["ign"] or m["name"]]
+                       for s in SIDES}
+        except Exception as e:
+            log(f"Couldn't fetch the teams' players from the GFX Engine: {e}", "warn")
+        stats = self.stats()
+        for side in SIDES:
+            if rosters.get(side):
+                names = rosters[side][:5]
+                changes.setdefault("stats", {})[side] = [dict(p, name=names[i] if i < len(names) else "")
+                                                         for i, p in enumerate(stats[side])]
+                done.append(f"{side}'s {len(names)} players")
         for side in SIDES:
             t = g.get(side) or {}
             team = {}
@@ -299,6 +371,9 @@ def make_handler(app):
                 return self._json(app.engine.status())
             if path == "/api/log":
                 return self._json({"lines": since(int((parse_qs(url.query).get("after") or ["0"])[0]))})
+            if path.startswith("/heroes/"):
+                full = heroes.picture(heroes.find(unquote(path[len("/heroes/"):]).rsplit(".", 1)[0]) or "-")
+                return self._file(full) if full else self._json({"error": "no picture of that hero"}, 404)
             if path.startswith("/map-art/"):
                 name = maps.find(unquote(path[len("/map-art/"):]))
                 full = maps.art(name)[0] if name else None
@@ -335,6 +410,11 @@ def make_handler(app):
                     app.config.update({"map_bans": {"steps": [], "results": []}})
                     log("New series: map bans and scores cleared")
                     app.changed()
+                elif path == "/api/stats":
+                    if body.get("clear"):
+                        app.clear_stats(bool(body.get("names")))
+                    else:
+                        app.set_stats(side, body.get("players"))
                 elif path == "/api/network":
                     app.set_network(bool(body.get("on")))
                 elif path == "/api/logo":
@@ -395,6 +475,7 @@ def start(app):
     """Start the web server (raises OSError if the port is taken)."""
     port = app.config.get()["http_port"]
     app.server = Server(app, app.host(), port)
+    app.heroes.fetch_missing()
     clean_up_old_update()
     app.updater.check_in_background()
     log(f"Overwatch HUD {app.updater.current} running - control panel http://localhost:{port}/control")

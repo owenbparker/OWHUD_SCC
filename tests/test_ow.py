@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import urllib.request
 
-from owhud import maps
+from owhud import heroes, maps
 from owhud.app import HudApp, start
 from owhud.config import Config
 
@@ -88,6 +88,22 @@ class Pool(unittest.TestCase):
         self.assertEqual(maps.slug("Watchpoint: Gibraltar"), "watchpoint-gibraltar")
 
 
+class Heroes(unittest.TestCase):
+    def test_every_hero_once_with_a_role(self):
+        names = [h for hs in heroes.ROLES.values() for h in hs]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertGreaterEqual(len(names), 54)
+        for h in ("D.Va", "Soldier: 76", "Lúcio", "Torbjörn", "Wuyang", "Jetpack Cat", "Domina"):
+            self.assertIn(h, heroes.ROLE_OF)
+
+    def test_names_any_spelling(self):
+        self.assertEqual(heroes.find("soldier 76"), "Soldier: 76")
+        self.assertEqual(heroes.find("lucio"), "Lúcio")
+        self.assertEqual(heroes.find("DVA"), "D.Va")
+        self.assertEqual(heroes.find("nobody"), "")
+        self.assertEqual(heroes.slug("Soldier: 76"), "soldier-76")
+
+
 class Server(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -95,10 +111,13 @@ class Server(unittest.TestCase):
         config.update({"http_port": 8797})
         self.app = HudApp(config)
         self.app.updater.check_in_background = lambda: None
+        self.app.heroes.fetch_missing = lambda: None
+        self.pictures, heroes.PICTURE_DIR = heroes.PICTURE_DIR, os.path.join(self.dir, "heroes")
         start(self.app)
 
     def tearDown(self):
         self.app.stop()
+        heroes.PICTURE_DIR = self.pictures
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def get(self, path):
@@ -130,6 +149,25 @@ class Server(unittest.TestCase):
         snap = self.app._engine_snapshot()
         self.assertEqual(snap["fields"]["left_score"], 1)
         self.assertEqual([g["path"] for g in snap["hud"]["graphics"]], ["/overlay", "/map-bans?bg=0"])
+
+    def test_stats_and_hero_pictures(self):
+        players = [{"name": "Saint1", "hero": "soldier 76", "kills": "22", "deaths": 6, "assists": 5,
+                    "damage": 11234, "healing": 300}, {"name": "Saint2", "hero": "lucio", "healing": -4}]
+        state = self.post("/api/stats", {"side": "left", "players": players})
+        left = state["stats"]["left"]
+        self.assertEqual(len(left), 5)
+        self.assertEqual((left[0]["hero"], left[0]["kills"], left[1]["hero"], left[1]["healing"]), ("Soldier: 76", 22, "Lúcio", 0))
+        os.makedirs(heroes.PICTURE_DIR)
+        with open(os.path.join(heroes.PICTURE_DIR, "soldier-76.png"), "wb") as f:
+            f.write(b"\x89PNG picture")
+        self.assertEqual(self.get("/heroes/soldier-76"), b"\x89PNG picture")
+        f = self.app._engine_snapshot()["fields"]
+        self.assertEqual((f["left_p1_name"], f["left_p1_hero"], f["left_p1_damage"], f["left_p1_healing"]),
+                         ("Saint1", "Soldier: 76", 11234, 300))
+        self.assertTrue(f["left_p1_hero_icon"].endswith("/heroes/soldier-76"))
+        self.assertEqual(f["left_p2_hero_icon"], "")       # no picture of Lúcio yet
+        state = self.post("/api/stats", {"clear": True})
+        self.assertEqual((state["stats"]["left"][0]["name"], state["stats"]["left"][0]["kills"]), ("Saint1", 0))
 
 
 if __name__ == "__main__":

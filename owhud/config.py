@@ -17,6 +17,8 @@ LOGO_DIR = os.path.join(DATA_DIR, "logos")         # uploaded team and tournamen
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 
 STYLES = {1: "SCC 1", 2: "SCC 2", 3: "SCC 3"}
+PLAYER = {"name": "", "hero": "", "kills": 0, "assists": 0, "deaths": 0, "damage": 0, "healing": 0}
+STAT_KEYS = ("kills", "assists", "deaths", "damage", "healing")
 
 DEFAULTS = {
     # Not the League (8777, 8779), VALORANT (8778), CoD (8780), Rocket League
@@ -42,6 +44,10 @@ DEFAULTS = {
     # Map bans (see owhud/maps.py).
     "map_bans": {"rules": "owcs", "team_a": "left", "pool": None, "steps": [], "results": [],
                  "bg": True},
+    # Post-game stats, typed in from the scoreboard: each team's 5 players
+    # (in-game name, hero, eliminations, assists, deaths, damage, healing),
+    # for the GFX Engine's Team stats and Player stats.
+    "stats": {side: [dict(PLAYER) for _ in range(5)] for side in ("left", "right")},
     # The SCC GFX Engine this HUD sends its series to (see owhud/enginelink.py).
     "gfx_engine": {"url": "", "name": "", "connected": False},
 }

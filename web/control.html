@@ -109,6 +109,16 @@
   .pool input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
   .pool .pic { margin-left: auto; padding: 1px 6px; font-size: 11px; color: var(--muted); }
   .pool .pic.has { color: #31c392; }
+  /* Post-game stats: a row per player. */
+  .stats-team { margin-bottom: 18px; }
+  .stats-team:last-of-type { margin-bottom: 0; }
+  .stats-grid { display: grid; grid-template-columns: 22px minmax(120px, 1.3fr) 34px minmax(130px, 1.2fr) repeat(5, minmax(56px, .6fr)); gap: 6px 8px; align-items: center; }
+  .stats-grid .hd { color: var(--muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+  .stats-grid .n { color: var(--muted); font-size: 12px; }
+  .stats-grid input, .stats-grid select { padding: 6px 8px; }
+  .stats-grid input[type=number] { text-align: right; }
+  .stats-grid .pic { width: 34px; height: 34px; border-radius: 6px; background: #000 center / cover no-repeat; border: 1px solid var(--line); }
+  .stats-total { color: var(--muted); font-size: 12px; text-align: right; }
   body.shell button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
   body.shell button.primary[disabled] { background: #3a3326; border-color: var(--line); color: var(--muted); }
   /* (Match: the controls first, the preview under them) */
@@ -142,6 +152,18 @@
     </div>
     <p class="note">Won the map gives the map being played to that team (its maps won go up on the overlay and the map bans).
       A drawn map adds a map to the series. New series clears the scores and the map bans.</p>
+  </section>
+  <section class="wide" data-page="stats">
+    <h2>Post-game stats</h2>
+    <div id="stats"></div>
+    <div class="row" style="margin-top:14px;flex-wrap:wrap">
+      <button id="stats-clear" style="flex:0 0 auto">Clear the stats (new map)</button>
+      <span class="note" id="stats-note" style="margin:0"></span>
+    </div>
+    <p class="note">Type them in from the end-of-map scoreboard (E = eliminations, A = assists, D = deaths, DMG = damage,
+      H = healing). They go to the GFX Engine's Team stats (DMG, Kills, Deaths) and Player stats (+ Healing), with each
+      player's hero when the engine's player pictures are set to champions / agents / heroes. Use Global Information on
+      the GFX Engine page fills in the players from the engine's teams.</p>
   </section>
   <section data-page="match">
     <h2>Overlay</h2>
@@ -228,7 +250,7 @@
   </section>
 </aside>
 </div>
-<script>window.SHELL = {"app": "Overwatch HUD", "logo": "assets/app_icon.png", "pages": [{"id": "match", "label": "Match", "icon": "live"}, {"id": "overview", "label": "Overview"}, {"id": "teams", "label": "Teams", "group": "Event setup"}, {"id": "pool", "label": "Map Pool", "icon": "tournament", "group": "Event setup"}, {"id": "mapbans", "label": "Map Bans", "icon": "draft", "group": "Live game"}, {"id": "engine", "label": "GFX Engine", "icon": "engine", "group": "Connections"}]};</script>
+<script>window.SHELL = {"app": "Overwatch HUD", "logo": "assets/app_icon.png", "pages": [{"id": "match", "label": "Match", "icon": "live"}, {"id": "overview", "label": "Overview"}, {"id": "teams", "label": "Teams", "group": "Event setup"}, {"id": "pool", "label": "Map Pool", "icon": "tournament", "group": "Event setup"}, {"id": "mapbans", "label": "Map Bans", "icon": "draft", "group": "Live game"}, {"id": "stats", "label": "Stats", "icon": "data", "group": "Live game"}, {"id": "engine", "label": "GFX Engine", "icon": "engine", "group": "Connections"}]};</script>
 <script src="enginelink.js"></script>
 <script src="shell.js"></script>
 <script src="update.js"></script>
@@ -353,6 +375,7 @@ function apply(s) {
   setIfIdle($("info"), cfg.info || "");
   applyMapBans(s);
   applyPool(s);
+  applyStats(s);
   // Outputs.
   $("url-overlay").textContent = `http://localhost:${app.port}/overlay`;
   $("url-bans").textContent = $("url-bans2").textContent = `http://localhost:${app.port}/map-bans`;
@@ -411,6 +434,53 @@ function applyMapBans(s) {
     config({ map_bans: { results } });
   });
 }
+
+// --- post-game stats ---------------------------------------------------------------
+const STAT_COLS = [["kills", "E"], ["assists", "A"], ["deaths", "D"], ["damage", "DMG"], ["healing", "H"]];
+const heroSlug = h => h.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+function statsRows(side) {
+  return [...$("stats").querySelectorAll(`.stats-team[data-side="${side}"] .prow`)].map(row => {
+    const p = { name: row.querySelector("[data-k=name]").value, hero: row.querySelector("[data-k=hero]").value };
+    for (const [k] of STAT_COLS) p[k] = Number(row.querySelector(`[data-k=${k}]`).value) || 0;
+    return p;
+  });
+}
+function applyStats(s) {
+  const box = $("stats"), roles = s.heroes.roles;
+  if (!box.children.length) {
+    const opts = '<option value="">—</option>' + Object.entries(roles).map(([role, list]) =>
+      `<optgroup label="${role[0].toUpperCase() + role.slice(1)}">${list.map(h => `<option>${esc(h)}</option>`).join("")}</optgroup>`).join("");
+    box.innerHTML = SIDES.map(side => `<div class="stats-team" data-side="${side}"><h3></h3><div class="stats-grid">
+      <span></span><span class="hd">Player</span><span></span><span class="hd">Hero</span>${STAT_COLS.map(([, t]) => `<span class="hd" style="text-align:right">${t}</span>`).join("")}
+      ${[0, 1, 2, 3, 4].map(i => `<span class="n prow-n">${i + 1}</span><span class="prow" style="display:contents">
+        <input data-k="name" spellcheck="false" placeholder="In-game name"><span class="pic"></span><select data-k="hero">${opts}</select>
+        ${STAT_COLS.map(([k]) => `<input type="number" min="0" step="1" data-k="${k}">`).join("")}</span>`).join("")}
+      <span></span><span></span><span></span><span class="stats-total">Team</span>${STAT_COLS.map(([k]) => `<span class="stats-total" data-total="${k}"></span>`).join("")}
+      </div></div>`).join("");
+    for (const team of box.querySelectorAll(".stats-team")) {
+      const side = team.dataset.side;
+      for (const el of team.querySelectorAll("[data-k]")) {
+        const send = () => post("/api/stats", { side, players: statsRows(side) });
+        if (el.tagName === "SELECT") el.onchange = send; else el.oninput = () => later(team, send, 400);
+      }
+    }
+  }
+  for (const team of box.querySelectorAll(".stats-team")) {
+    const side = team.dataset.side, players = s.stats[side];
+    team.querySelector("h3").textContent = s.config[side].name;
+    team.querySelectorAll(".prow").forEach((row, i) => {
+      const p = players[i];
+      for (const el of row.querySelectorAll("[data-k]")) setIfIdle(el, el.dataset.k === "hero" || el.dataset.k === "name" ? p[el.dataset.k] : String(p[el.dataset.k]));
+      const pic = row.querySelector(".pic"), want = p.hero && s.heroes.pictures[p.hero] ? `url("/heroes/${heroSlug(p.hero)}")` : "";
+      if (pic.dataset.bg !== want) { pic.dataset.bg = want; pic.style.backgroundImage = want; }
+      pic.title = p.hero && !s.heroes.pictures[p.hero] ? "No picture of this hero yet" : p.hero;
+    });
+    for (const [k] of STAT_COLS) team.querySelector(`[data-total="${k}"]`).textContent = players.reduce((t, p) => t + p[k], 0).toLocaleString();
+  }
+  const missing = Object.values(s.heroes.pictures).filter(x => !x).length;
+  $("stats-note").textContent = missing ? `${missing} heroes have no picture yet (they download when the HUD is online).` : "";
+}
+$("stats-clear").onclick = () => { if (confirm("Clear the stats and heroes for a new map? (The players stay.)")) post("/api/stats", { clear: true }); };
 
 // --- the map pool ---------------------------------------------------------------
 let artFor = null;
