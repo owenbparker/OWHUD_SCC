@@ -87,9 +87,16 @@ def ocr_words(image):
     return best
 
 
+def _junk(t):
+    """Not part of a name: a number (the ultimate charge), or one or two
+    stray letters (the recognition reading an icon; BattleTags have 3+)."""
+    return number(t[0]) is not None or len(t[0].strip()) <= 2
+
+
 def _candidates(words, any_line=False):
     """The lines that could be a player's: a name, then at least one number
-    (any_line: or no number read at all, since lone digits are often missed)."""
+    (any_line: or no number read at all, since lone digits are often missed).
+    "numbers_only": a line of numbers whose name wasn't read with them."""
     out = []
     if not words:
         return out
@@ -97,14 +104,18 @@ def _candidates(words, any_line=False):
     for line in _lines(words):
         for part in _split_rows(line, tall):
             toks = _tokens(part)
-            while toks and number(toks[0][0]) is not None:
-                toks = toks[1:]       # (a number before the name: Overwatch's ultimate charge)
+            while toks and _junk(toks[0]):
+                toks = toks[1:]       # (the ultimate charge, an icon: before the name)
             first = next((i for i, t in enumerate(toks) if number(t[0]) is not None), None)
             name = [t for t in (toks if first is None and any_line else toks[:first or 0]) if not t[0].endswith("%")]
             if name:
-                h = max(t[4] for t in toks)
+                h = statistics.median(t[4] for t in name)
                 out.append({"name": " ".join(t[0] for t in name), "y": line["y"], "h": h, "x": name[0][1],
                             "name_end": name[-1][1] + name[-1][3], "numbers": first is not None})
+            elif any_line and first is not None and sum(number(t[0]) is not None for t in toks) >= 2:
+                nums = [t for t in toks if number(t[0]) is not None]
+                out.append({"name": "", "y": line["y"], "h": statistics.median(t[4] for t in nums),
+                            "x": nums[0][1], "numbers_only": True, "numbers": True})
     return out
 
 
@@ -235,13 +246,32 @@ def read_number(words, repeated=False):
 debug = []     # (what the last screenshot's numbers were read as)
 
 
+def _read_name(image, x0, x1, y, h):
+    """A name the first reading missed: its part of the row read on its own,
+    enlarged (the top line: a player's title can be under it)."""
+    crop = image.crop((max(0, int(x0)), max(0, int(y - h * 1.3)), int(x1), min(image.height, int(y + h * 0.6))))
+    crop = crop.convert("L").resize((crop.width * 2, crop.height * 2))
+    lines = _lines([w for w in _ocr.words(crop) if not _junk(w)])
+    return " ".join(w[0] for w in lines[0]["words"]) if lines else ""
+
+
 def image_rows(image, words):
     """The players' rows, read from the picture: [{"name", "y", "x", "nums"}]."""
     rows, used = [], []
-    # (lines with numbers first: a line under one, like a player's title, is part of its row)
-    for c in sorted(_candidates(words, any_line=True), key=lambda c: not c["numbers"]):
-        if any(abs(c["y"] - y) < c["h"] * 1.2 and abs(c["x"] - x) < 200 for y, x in used):
+    cands = _candidates(words, any_line=True)
+    named = [c for c in cands if c["name"]]
+    name_x = statistics.median(c["x"] for c in named) if named else 0
+    name_end = statistics.median(c["name_end"] for c in named) if named else 0
+    # Names with numbers first, then names alone (top down: a player's title
+    # is under their name, part of their row), then numbers whose name wasn't read.
+    order = sorted(cands, key=lambda c: (c.get("numbers_only", False), not c["numbers"], c["y"]))
+    for c in order:
+        if any(abs(c["y"] - y) < c["h"] * 1.2 for y, x in used if abs(x - c["x"]) < 400 or c.get("numbers_only")):
             continue
+        if c.get("numbers_only"):
+            if not named or c["x"] < name_end:
+                continue
+            c = dict(c, x=name_x, name_end=name_end, name=_read_name(image, name_x - 4, c["x"] - c["h"], c["y"], c["h"]))
         used.append((c["y"], c["x"]))
         top, bottom = int(c["y"] - c["h"] * 0.9), int(c["y"] + c["h"] * 0.9)
         left = int(c["name_end"] + c["h"] * 0.3)
