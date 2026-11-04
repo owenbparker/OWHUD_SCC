@@ -41,7 +41,8 @@ class HudApp:
         # The SCC GFX Engine: the series and the map bans go to it; its teams can come here.
         self.engine = EngineLink("Overwatch HUD", "overwatch", self._engine_snapshot, self._engine_apply_global,
                                  load=lambda: self.config.get().get("gfx_engine"),
-                                 save=lambda d: self.config.update({"gfx_engine": d}), log=log)
+                                 save=lambda d: self.config.update({"gfx_engine": d}), log=log,
+                                 swap=lambda: self.swap_sides(engine=False))
 
     # --- the series -----------------------------------------------------------------
 
@@ -121,7 +122,7 @@ class HudApp:
         self.changed()
         return info
 
-    def swap_sides(self):
+    def swap_sides(self, engine=True):
         """The teams change sides: their names, colours, logos and records, the
         maps they've won, Team A in the map bans and their stats."""
         cfg = self.config.get()
@@ -134,6 +135,8 @@ class HudApp:
                             "stats": {"left": cur["right"], "right": cur["left"]}})
         log(f"Sides swapped: {cfg['right']['name'] or 'right team'} on the left")
         self.changed()
+        if engine:   # (connected: the GFX Engine's Global teams swap too, as the HUD follows them)
+            self.engine.swap_global()
 
     def swap_stats(self):
         cur = self.stats()
