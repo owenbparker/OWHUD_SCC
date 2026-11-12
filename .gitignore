@@ -10,3 +10,4 @@ _update/
 build/
 dist/
 /heroes/
+appearance.json
