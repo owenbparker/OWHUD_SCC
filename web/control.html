@@ -146,6 +146,7 @@
   <div class="status" style="margin-left:auto">
     <label style="margin:0">HUD</label>
     <select id="style" style="width:auto;padding:6px 10px"></select>
+    <button id="custom-design" title="Design your own HUD on this HUD's live data, or bring in a Photoshop, Figma or GFX Engine design (HUD Builder, built in)">Custom design</button>
     <button id="update" class="update" hidden></button>
     <span class="version" id="version"></span>
   </div>
@@ -593,6 +594,14 @@ async function pollLog() {
   setTimeout(pollLog, 1500);
 }
 poll(); pollLog(); fitPreviews();
+</script>
+<script>
+// Custom design: HUD Builder, built in, in its own window.
+document.getElementById("custom-design").addEventListener("click", async () => {
+  const r = await fetch("/api/custom-design", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const d = await r.json().catch(() => ({}));
+  if (d.error) alert(d.error);
+});
 </script>
 </body>
 </html>

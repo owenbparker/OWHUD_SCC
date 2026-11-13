@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 from . import appearance, heroes, maps, scoreboard
 from .config import DATA_DIR, LOGO_DIR, PLAYER, STAT_KEYS, STYLES, web_file
+from hudbuilder import embed as hud_builder
 from .enginelink import EngineLink, save_logo_bytes
 from .log import log, since
 from .updater import Updater, clean_up_old_update
@@ -35,6 +36,7 @@ class HudApp:
         self.config = config
         self.updater = Updater()
         self.server = None
+        self.builder = None         # Custom design: HUD Builder, built in (hudbuilder/embed.py)
         self.version = 0
         self._cond = threading.Condition()
         self.heroes = heroes.Pictures()
@@ -289,7 +291,26 @@ class HudApp:
             self._cond.notify_all()
         self.engine.send_now()
 
+    def _builder_snapshot(self):
+        """What Custom design reads: what the GFX Engine gets, with the teams' logos."""
+        snap = self._engine_snapshot()
+        cfg = self.config.get()
+        series = snap.get("series") or {}
+        for side in ("left", "right"):
+            team = cfg.get(side) if isinstance(cfg.get(side), dict) else (cfg.get("match") or {}).get(side) or {}
+            # (the HUD's own team when the snapshot leaves the series out, e.g. while it follows the GFX Engine)
+            own = {"name": team.get("name") or "", "short": team.get("tricode") or team.get("short") or "",
+                   "score": team.get("wins") or 0, "color": team.get("color") or "", "logo": team.get("logo") or ""}
+            series[side] = dict(own, **{k: v for k, v in (series.get(side) or {}).items() if v not in (None, "")})
+        series.setdefault("best_of", (cfg.get("match") or {}).get("best_of") or cfg.get("best_of") or 3)
+        snap["series"] = series
+        snap.setdefault("event", cfg.get("event") or "")
+        snap.setdefault("stage", cfg.get("stage") or "")
+        return snap
+
     def stop(self):
+        if self.builder:
+            self.builder.stop()
         self.engine.stop()
         if self.server:
             self.server.stop()
@@ -439,6 +460,12 @@ def make_handler(app):
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 side = body.get("side")
+                if path == "/api/custom-design":
+                    # Custom design: HUD Builder, built in (hudbuilder/embed.py).
+                    try:
+                        return self._send(json.dumps({"url": hud_builder.open_window(app.builder, "Custom design · Overwatch HUD")}))
+                    except ValueError as e:
+                        return self._send(json.dumps({"error": str(e)}), status=400)
                 if path.startswith("/api/engine/"):
                     # Connect to GFX Engine (see enginelink.py).
                     reply = app.engine.handle("POST", path, body)
@@ -534,6 +561,9 @@ def start(app):
     app.heroes.fetch_missing()
     clean_up_old_update()
     app.updater.check_in_background()
+    # Custom design: design your own HUD (or bring in a .psd / .fig / .sccgfx) on this HUD's data.
+    app.builder = hud_builder.start("overwatch", "Overwatch HUD", app._builder_snapshot, DATA_DIR,
+                                    host_url=lambda: f"http://127.0.0.1:{port}")
     log(f"Overwatch HUD {app.updater.current} running - control panel http://localhost:{port}/control")
     log(f"Overlay (browser source, 1920x1080): http://localhost:{port}/overlay")
     log(f"Map bans (browser source, 1920x1080): http://localhost:{port}/map-bans")
