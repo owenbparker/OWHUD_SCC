@@ -91,3 +91,7 @@ tournament logo, and the players' names for the stats.
     python -m owhud              # the HUD alone
     python -m unittest discover -s tests
     python -m owhud.scoreboard shot.png   # what a screenshot reads as (Windows)
+
+## Releases
+
+Normal releases (the ones installed apps update to) are built from the `main` branch. Work branches publish test builds (GitHub pre-releases) that installed apps never pick up.
