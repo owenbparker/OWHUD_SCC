@@ -122,6 +122,9 @@
   .stats-grid input[type=number] { text-align: right; }
   .stats-grid .pic { width: 34px; height: 34px; border-radius: 6px; background: #000 center / cover no-repeat; border: 1px solid var(--line); }
   .stats-total { color: var(--muted); font-size: 12px; text-align: right; }
+  .ws-box { padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; }
+  .ws-box code { font-size: 12px; word-break: break-all; }
+  .ws-box a { color: var(--accent); }
   .shot-drop { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 18px; border: 1.5px dashed var(--line);
     border-radius: 10px; color: var(--muted); cursor: pointer; }
   .shot-drop:hover, .shot-drop.over { border-color: var(--accent); color: inherit; }
@@ -165,6 +168,15 @@
   </section>
   <section class="wide" data-page="stats">
     <h2>Post-game stats</h2>
+    <div class="ws-box">
+      <div class="row" style="flex-wrap:wrap;align-items:center;margin:0">
+        <button id="ws-read" class="primary" style="flex:0 0 auto">Read the last map from the Workshop log</button>
+        <label class="toggle" style="flex:0 0 auto;margin:0"><input type="checkbox" id="ws-auto"> Read each map as soon as it ends</label>
+      </div>
+      <div class="note" id="ws-msg" style="margin:8px 0 0"></div>
+      <div class="note" style="margin:6px 0 0">Log folder: <code id="ws-folder"></code> <a href="#" id="ws-change">change</a>
+        · or drop a log (.txt) on the box below.</div>
+    </div>
     <div class="shot-drop" id="shot-drop"><img id="shot-img" alt="">
       <div class="msg"><b>Drop a scoreboard screenshot here</b>, paste one (Ctrl+V) or click to choose one: the players'
         names and E / A / D / DMG / H are read from it. Check them, and pick the heroes.<br><span id="shot-msg"></span></div></div>
@@ -174,6 +186,11 @@
       <button id="stats-swap" style="flex:0 0 auto">Swap the teams</button>
       <span class="note" id="stats-note" style="margin:0"></span>
     </div>
+    <p class="note">The Workshop log needs the lobby host to run a stats-logging Workshop mode (the ScrimTime code that
+      Parsertime uses, e.g. DKEEH) with Settings &gt; Gameplay &gt; Enable Workshop Inspector Log File on, and this HUD on
+      the host's PC (or the folder shared to it). Overwatch writes a Log-….txt per match into Documents\Overwatch\Workshop.
+      From it: E = eliminations, A = offensive + defensive assists, D = deaths, DMG = all damage dealt, H = healing dealt,
+      and each player's hero is the one they played longest.</p>
     <p class="note">Type them in from the end-of-map scoreboard (E = eliminations, A = assists, D = deaths, DMG = damage,
       H = healing). They go to the GFX Engine's Team stats (DMG, Kills, Deaths) and Player stats (+ Healing), with each
       player's hero when the engine's player pictures are set to champions / agents / heroes. Use Global Information on
@@ -390,6 +407,7 @@ function apply(s) {
   applyMapBans(s);
   applyPool(s);
   applyStats(s);
+  applyWorkshop(s);
   // Outputs.
   $("url-overlay").textContent = `http://localhost:${app.port}/overlay`;
   $("url-bans").textContent = $("url-bans2").textContent = `http://localhost:${app.port}/map-bans`;
@@ -496,7 +514,38 @@ function applyStats(s) {
 }
 $("swap-sides").onclick = () => post("/api/swap");
 $("stats-swap").onclick = () => post("/api/stats", { swap: true });
+function wsResult(r) {
+  if (!r) return;
+  const n = r.read.missing.length;
+  delete $("ws-msg").dataset.idle;
+  $("ws-msg").textContent = `Read ${r.read.players} players from ${r.read.map}${r.read.file ? " (" + r.read.file + ")" : ""}`
+    + (r.read.ended ? "." : ", which hadn't ended yet: these are the stats so far.")
+    + (n ? ` ${n} number${n > 1 ? "s were" : " was"} missing (${r.read.missing.join(", ")}).` : "")
+    + (r.read.swapped ? " (Their names matched the other way round, so the teams were swapped.)" : "");
+}
+$("ws-read").onclick = async () => { $("ws-msg").textContent = "Reading…"; const r = await post("/api/stats/workshop", {}); if (!r) $("ws-msg").textContent = ""; wsResult(r); };
+$("ws-auto").onchange = e => config({ workshop_auto: e.target.checked });
+$("ws-change").onclick = e => {
+  e.preventDefault();
+  const f = prompt("The folder Overwatch writes its Workshop logs to (empty: Documents\\Overwatch\\Workshop):", state.config.workshop_dir || state.workshop.folder);
+  if (f !== null) post("/api/stats/workshop", { folder: f === state.workshop.folder && !state.config.workshop_dir ? "" : f });
+};
+async function readLog(file) {
+  $("ws-msg").textContent = "Reading…";
+  wsResult(await post("/api/stats/workshop", { text: await file.text(), name: file.name }));
+}
+function applyWorkshop(s) {
+  const w = s.workshop;
+  $("ws-folder").textContent = w.folder;
+  $("ws-auto").checked = !!s.config.workshop_auto;
+  if (!$("ws-msg").textContent || $("ws-msg").dataset.idle) {
+    $("ws-msg").dataset.idle = 1;
+    $("ws-msg").textContent = !w.found ? "That folder isn't there on this PC (yet): the log file is off, or this isn't the lobby host's PC."
+      : w.latest ? `Newest log: ${w.latest} (${new Date(w.latest_time * 1000).toLocaleString()})` : "No logs in it yet.";
+  }
+}
 async function readShot(file) {
+  if (file && (/\.txt$/i.test(file.name) || file.type === "text/plain")) return readLog(file);
   if (!file || !file.type.startsWith("image/")) return;
   const img = $("shot-img");
   if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);

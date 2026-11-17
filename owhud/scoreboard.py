@@ -528,6 +528,8 @@ def merge(current, teams):
                 free.remove(j)
                 rows[j]["name"], rows[j]["hero"] = p["name"], ""
         for i, j in place.items():
+            if team[i].get("hero"):
+                rows[j]["hero"] = team[i]["hero"]
             for k in COLS:
                 if team[i][k] is None:
                     missing.append(f"{rows[j]['name']} {k}")

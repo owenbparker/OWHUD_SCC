@@ -13,7 +13,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
-from . import heroes, maps, scoreboard
+from . import heroes, maps, scoreboard, workshop
 from .config import DATA_DIR, LOGO_DIR, PLAYER, STAT_KEYS, STYLES, web_file
 from .enginelink import EngineLink, save_logo_bytes
 from .log import log, since
@@ -121,6 +121,56 @@ class HudApp:
         self.changed()
         return info
 
+    def workshop_folder(self):
+        return workshop.folder(self.config.get().get("workshop_dir") or "")
+
+    def read_workshop_log(self, text=None, name=""):
+        """The last map in a Workshop log (its text, or else the newest log in
+        the Workshop folder) read into the stats. Returns {"file", "map",
+        "players", "missing", "swapped"}."""
+        if text is None:
+            path = workshop.latest(self.workshop_folder())
+            if not path:
+                raise ValueError(f"no Workshop logs in {self.workshop_folder()} (the lobby host needs the log file "
+                                 "turned on: see the note below)")
+            name = os.path.basename(path)
+            match = workshop.read_file(path)
+        else:
+            match = workshop.parse(text)
+        if not match:
+            raise ValueError(f"no match in {name or 'that file'} (is it a Workshop log?)")
+        if not any(match["players"]):
+            raise ValueError(f"{match['map']} hasn't got to the end of a round yet in {name or 'that log'}: "
+                             "there are no stats in it yet")
+        stats, info = scoreboard.merge(self.stats(), match["players"])
+        self.config.update({"stats": stats})
+        log(f"Read {info['players']} players' stats ({match['map']}) from the Workshop log {name}".rstrip())
+        self.changed()
+        return dict(info, file=name, map=match["map"], ended=match["ended"])
+
+    def watch_workshop(self):
+        """With "workshop_auto" on, each map's stats are read from the Workshop
+        log as soon as the map ends."""
+        seen, done = None, None
+        while True:
+            try:
+                cfg = self.config.get()
+                path = workshop.latest(self.workshop_folder()) if cfg.get("workshop_auto") else None
+                stamp = (path, os.path.getmtime(path)) if path else None
+                if stamp and stamp != seen:
+                    seen = stamp
+                    match = workshop.read_file(path)
+                    key = match and match["ended"] and (path, match["map"], tuple(match["score"]))
+                    if key and done is not None and key != done:
+                        self.read_workshop_log()
+                    if key or done is None:
+                        done = key or False      # (a map already over when this started isn't read)
+                elif not path:
+                    seen, done = None, None
+            except (OSError, ValueError) as e:
+                log(f"Workshop log: {e}")
+            time.sleep(3)
+
     def swap_sides(self):
         """The teams change sides: their names, colours, logos and records, the
         maps they've won, Team A in the map bans and their stats."""
@@ -166,8 +216,15 @@ class HudApp:
                 "map_bans": {"rules": rules, "rules_names": maps.RULES, "team_a": team_a, "pool": pool,
                              "all_maps": maps.ALL_MAPS, "current_pool": maps.CURRENT_POOL, "modes": maps.MODE_NAMES,
                              "steps": maps.steps(cfg), "art": {m: bool(maps.art(m)[0]) for m in maps.MODE_OF}},
-                "stats": self.stats(cfg),
+                "stats": self.stats(cfg), "workshop": self._workshop_info(cfg),
                 "heroes": {"roles": heroes.ROLES, "pictures": {h: bool(heroes.picture(h)) for h in heroes.ROLE_OF}}}
+
+    def _workshop_info(self, cfg):
+        where = workshop.folder(cfg.get("workshop_dir") or "")
+        path = workshop.latest(where) if os.path.isdir(where) else None
+        return {"folder": where, "found": os.path.isdir(where), "set": bool(cfg.get("workshop_dir")),
+                "latest": os.path.basename(path) if path else "",
+                "latest_time": os.path.getmtime(path) if path else 0}
 
     def overlay(self):
         """What the overlay and the map bans graphic show (besides the maps)."""
@@ -457,6 +514,13 @@ def make_handler(app):
                 elif path == "/api/stats/screenshot":
                     info = app.read_screenshot(body.get("data"))
                     return self._json(dict(app.snapshot(), read=info))
+                elif path == "/api/stats/workshop":
+                    if "folder" in body:
+                        app.config.update({"workshop_dir": str(body["folder"] or "").strip()})
+                        app.changed()
+                        return self._json(app.snapshot())
+                    info = app.read_workshop_log(body.get("text"), str(body.get("name") or ""))
+                    return self._json(dict(app.snapshot(), read=info))
                 elif path == "/api/stats":
                     if body.get("swap"):
                         app.swap_stats()
@@ -525,6 +589,7 @@ def start(app):
     port = app.config.get()["http_port"]
     app.server = Server(app, app.host(), port)
     app.heroes.fetch_missing()
+    threading.Thread(target=app.watch_workshop, daemon=True).start()
     clean_up_old_update()
     app.updater.check_in_background()
     log(f"Overwatch HUD {app.updater.current} running - control panel http://localhost:{port}/control")

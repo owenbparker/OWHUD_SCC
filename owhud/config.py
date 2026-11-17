@@ -48,6 +48,10 @@ DEFAULTS = {
     # (in-game name, hero, eliminations, assists, deaths, damage, healing),
     # for the GFX Engine's Team stats and Player stats.
     "stats": {side: [dict(PLAYER) for _ in range(5)] for side in ("left", "right")},
+    # Where the lobby host's Workshop logs are (none: Documents\Overwatch\Workshop).
+    "workshop_dir": "",
+    # Read each map's stats from the newest log as soon as the map ends.
+    "workshop_auto": False,
     # The SCC GFX Engine this HUD sends its series to (see owhud/enginelink.py).
     "gfx_engine": {"url": "", "name": "", "connected": False},
 }

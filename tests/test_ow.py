@@ -3,9 +3,10 @@ import os
 import shutil
 import tempfile
 import unittest
+import urllib.error
 import urllib.request
 
-from owhud import heroes, maps, scoreboard
+from owhud import heroes, maps, scoreboard, workshop
 from owhud.app import HudApp, start
 from owhud.config import Config
 
@@ -171,6 +172,63 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(info["missing"], ["Saint4 kills"])
 
 
+def stat(t, rnd, team, name, hero, e, d, dmg, heal, off, dfn, played, fb=0):
+    """A ScrimTime player_stat line."""
+    rest = [0] * 4 + [0] * 13 + [0, 0, 0, 0, 0, 0.0]
+    vals = [t, rnd, team, name, hero, e, fb, d, dmg, 0, dmg, heal, 0, 0, 0, 0, dfn, off] + [0] * 19 + [played]
+    return f"[00:10:00] ,player_stat," + ",".join(str(v) for v in vals)
+
+
+LOG = "\n".join([
+    "[00:00:00] ,match_start,0,Busan,Control,Team 1,Team 2",
+    "[00:00:01] ,round_start,0,1,0,0,0,0",
+    "[00:00:09] ,hero_spawn,0,Team 1,Saint1,Ana,0,0",
+    "[00:00:30] ,kill,30.5,Team 1,Saint1,Ana,Team 2,Hound1,Genji,Primary Fire,70,False,False,0,(1.0, 2.0, 3.0),(4.0, 5.0, 6.0)",
+    # round 1's totals (replaced by round 2's)
+    stat(200, 1, "Team 1", "Saint1", "Ana", 1, 1, 100, 2000, 1, 1, 200),
+    "[00:06:42] ,round_end,243.02,1,0,1,0,2,100,41.08,0",
+    # round 2's totals, written twice; Saint1 swapped Ana -> Kiriko
+    *[line for _ in range(2) for line in (
+        stat(400, 2, "Team 1", "Saint1", "Ana", 3, 2, 1000.4, 5000, 2, 3, 150),
+        stat(400, 2, "Team 1", "Saint1", "Kiriko", 4, 1, 2000.2, 4000.6, 1, 1, 250),
+        stat(400, 2, "Team 1", "Saint2", "Reinhardt", 9, 4, 9000, 0, 2, 0, 400),
+        stat(400, 2, "Team 2", "Hound1", "Genji", 7, 5, 8000, 0, 3, 0, 400).replace(",8000,", ",****0,", 1),
+        stat(400, 2, "Team 2", "Hound2", "Soldier: 76", 2, 6, 3000, 200, 1, 0, 400))],
+    "[00:13:00] ,round_end,400,2,0,2,0,0,100,37.92,0",
+    "[00:13:00] ,match_end,400,2,2,0",
+])
+
+
+class Workshop(unittest.TestCase):
+    def test_last_map(self):
+        m = workshop.parse(LOG)
+        self.assertEqual((m["map"], m["teams"], m["score"], m["ended"]), ("Busan", ["Team 1", "Team 2"], [2, 0], True))
+        s1, s2 = m["players"][0]
+        self.assertEqual(s1, {"name": "Saint1", "hero": "Kiriko", "kills": 7, "assists": 7, "deaths": 3,
+                              "damage": 3001, "healing": 9001})
+        self.assertEqual((s2["name"], s2["hero"], s2["kills"]), ("Saint2", "Reinhardt", 9))
+        h1, h2 = m["players"][1]
+        self.assertEqual((h1["name"], h1["damage"], h2["hero"]), ("Hound1", 8000, "Soldier: 76"))   # (censored: hero + barrier)
+
+    def test_no_stats_yet_and_not_a_log(self):
+        m = workshop.parse(LOG.split("\n")[0] + "\n" + LOG.split("\n")[1])
+        self.assertEqual((m["players"], m["ended"]), ([[], []], False))
+        self.assertIsNone(workshop.parse("hello"))
+
+    def test_newest_log(self):
+        d = tempfile.mkdtemp()
+        try:
+            self.assertIsNone(workshop.latest(d))
+            for i, name in enumerate(("Log-2026-11-01-20-00-00.txt", "Log-2026-11-02-20-00-00.txt")):
+                with open(os.path.join(d, name), "w") as f:
+                    f.write(LOG)
+                os.utime(os.path.join(d, name), (1000 + i, 1000 + i))
+            self.assertTrue(workshop.latest(d).endswith("Log-2026-11-02-20-00-00.txt"))
+            self.assertEqual(workshop.folder(d), d)
+        finally:
+            shutil.rmtree(d)
+
+
 class Server(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -256,6 +314,30 @@ class Server(unittest.TestCase):
         self.assertEqual((state["overlay"]["right"]["score"], state["stats"]["right"][0]["name"]), (1, "Saint1"))
         state = self.post("/api/stats", {"clear": True})
         self.assertEqual((state["stats"]["right"][0]["name"], state["stats"]["right"][0]["kills"]), ("Saint1", 0))
+
+
+    def test_workshop_log(self):
+        self.post("/api/stats", {"side": "right", "players": [{"name": "Hound2"}]})
+        logs = os.path.join(self.dir, "logs")
+        state = self.post("/api/stats/workshop", {"folder": logs})
+        self.assertEqual((state["workshop"]["folder"], state["workshop"]["found"]), (logs, False))
+        req = urllib.request.Request("http://127.0.0.1:8797/api/stats/workshop", b"{}", {"Content-Type": "application/json"})
+        with self.assertRaises(urllib.error.HTTPError):
+            urllib.request.urlopen(req, timeout=5)
+        os.makedirs(logs)
+        with open(os.path.join(logs, "Log-2026-11-16-20-00-00.txt"), "w", encoding="utf-8") as f:
+            f.write(LOG)
+        state = self.post("/api/stats/workshop", {})
+        self.assertEqual((state["read"]["file"], state["read"]["map"], state["read"]["players"]),
+                         ("Log-2026-11-16-20-00-00.txt", "Busan", 4))
+        self.assertFalse(state["read"]["swapped"])     # (Hound2 was already on the right)
+        left, right = state["stats"]["left"], state["stats"]["right"]
+        self.assertEqual((left[0]["name"], left[0]["hero"], left[0]["healing"]), ("Saint1", "Kiriko", 9001))
+        self.assertEqual((right[0]["name"], right[0]["hero"], right[0]["deaths"]), ("Hound2", "Soldier: 76", 6))
+        self.assertEqual(state["workshop"]["latest"], "Log-2026-11-16-20-00-00.txt")
+        # A log dropped on the page.
+        state = self.post("/api/stats/workshop", {"text": LOG.replace("Saint2", "Saint9"), "name": "x.txt"})
+        self.assertIn("Saint9", [p["name"] for p in state["stats"]["left"]])
 
 
 if __name__ == "__main__":

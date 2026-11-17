@@ -61,6 +61,16 @@ the map bans.
   made-up scoreboard to check this; the heroes aren't read, pick them.) *Swap the teams* if
   they landed the wrong way round; *Clear the stats* for the next map. They go to the GFX Engine's Team
   stats (DMG, Kills, Deaths) and Player stats (the same + Healing).
+- **Stats from the Workshop log** (when your side hosts the lobby): the host
+  runs a stats-logging Workshop mode (ScrimTime, the one Parsertime reads)
+  with Settings > Gameplay > Enable Workshop Inspector Log File on, and
+  Overwatch writes each match to Documents\Overwatch\Workshop as
+  Log-….txt. On the host's PC, *Read the last map from the Workshop log*
+  fills in every player's E (eliminations), A (offensive + defensive
+  assists), D, DMG (all damage dealt), H (healing dealt) and the hero they
+  played longest; tick *Read each map as soon as it ends* and it happens by
+  itself at match_end. A log can also be dropped on the screenshot box, and
+  the folder changed (e.g. one shared from the host's PC).
 
 Long names and lines shrink to fit their boxes on every design and on the map
 bans.
